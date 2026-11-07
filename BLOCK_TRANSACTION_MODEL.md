@@ -1,8 +1,8 @@
 # Deltanium Block and Transaction Model
 
-## Overview
+## 概述
 
-The Deltanium blockchain uses a **Block** structure to store **Transactions**. Each block contains a list of transactions, secured by a Merkle tree and digital signatures from Block Creator nodes.
+Deltanium blockchain sử dụng **Block** structure để lưu trữ các **Transactions**. Mỗi block chứa một danh sách các transactions, được bảo mật bằng Merkle tree và digital signatures từ Block Creator nodes.
 
 ---
 

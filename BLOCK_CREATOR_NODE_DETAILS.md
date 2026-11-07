@@ -1,21 +1,21 @@
-# Block Creator Node - Detailed Functions
+# Block Creator Node - Chức Năng Chi Tiết
 
-## Overview
+## Tổng Quan
 
-Block Creator Nodes are the most important nodes in the Deltanium blockchain network, responsible for processing transactions and creating blocks. Each Block Creator node must:
-- Have its own Public/Private Key pair
-- Be authenticated and authorized by the Central Node (deltanium.com)
-- Stake D coins (penalized if it fails to create a block in time)
-- Receive transaction fees when creating blocks
+Block Creator Nodes là các nodes quan trọng nhất trong mạng Deltanium blockchain, chịu trách nhiệm xử lý transactions và tạo blocks. Mỗi Block Creator node phải:
+- Có cặp Public/Private Key riêng
+- Được Central Node (deltanium.com) authenticate và authorize
+- Stake D coins (bị penalty nếu không tạo block kịp thời)
+- Nhận transaction fees khi tạo blocks
 
-## Specific Functions
+## Các Chức Năng Cụ Thể
 
 ### 1. Transaction Pool Management
 
-#### 1.1. Receive and Store Transactions
-- **Receive transactions from the network:**
-  - Transactions are broadcast to all Block Creator nodes
-  - Receive the following transaction types:
+#### 1.1. Nhận và Lưu Trữ Transactions
+- **Nhận transactions từ network:**
+  - Transactions được broadcast đến tất cả Block Creator nodes
+  - Nhận các loại transactions:
     - UserRegistration
     - Follow/Unfollow
     - CreatePost
@@ -26,79 +26,79 @@ Block Creator Nodes are the most important nodes in the Deltanium blockchain net
     - StorageOperation
 
 - **Transaction Pool (Memory Pool):**
-  - Store pending transactions waiting to be included in a block
-  - Maintain the transaction pool with a capacity limit
-  - Remove transactions after they are included in a block
+  - Lưu trữ pending transactions chờ được include vào block
+  - Maintain transaction pool với capacity limit
+  - Remove transactions sau khi được include trong block
   - Remove duplicate transactions
 
-#### 1.2. Validate Transactions Before Adding to the Pool
+#### 1.2. Validate Transactions Trước Khi Add Vào Pool
 - **Signature Verification:**
-  - Verify the digital signature of the transaction
-  - Verify the sender's public key
-  - Verify the signature matches the transaction data
+  - Verify digital signature của transaction
+  - Verify public key của sender
+  - Verify signature matches transaction data
 
 - **Transaction Validity Checks:**
-  - Check that the transaction format is correct
-  - Check that the timestamp is not too old or too far in the future
-  - Check the nonce to prevent duplicate transactions
-  - Check the transaction type and data structure
+  - Check transaction format đúng
+  - Check timestamp không quá cũ hoặc quá xa trong tương lai
+  - Check nonce để prevent duplicate transactions
+  - Check transaction type và data structure
 
 - **State Validation:**
-  - Check that the sender has sufficient balance (for Transfer/Donate)
-  - Check that the user is registered (for other transactions)
-  - Check that there is no double-spending
-  - Check that follow/unfollow relationships are valid
+  - Check sender có đủ balance (cho Transfer/Donate)
+  - Check user đã registered (cho các transactions khác)
+  - Check không có double-spending
+  - Check follow/unfollow relationships hợp lệ
 
 - **Fee Validation:**
-  - Check that the transaction has a sufficient fee
-  - Prioritize transactions with higher fees
+  - Check transaction có đủ fee
+  - Prioritize transactions với fees cao hơn
 
 #### 1.3. Transaction Prioritization
-- **Prioritize by fees:**
-  - Transactions with higher fees are prioritized
-  - Calculate fee per byte to optimize block space
+- **Prioritize theo fees:**
+  - Transactions với fees cao hơn được ưu tiên
+  - Tính toán fee per byte để optimize block space
 
-- **Prioritize by timestamp:**
-  - Older transactions are prioritized (FIFO with fee consideration)
+- **Prioritize theo timestamp:**
+  - Older transactions được ưu tiên (FIFO với fee consideration)
   - Prevent transaction starvation
 
-- **Prioritize by type:**
-  - Critical transactions (node registration) may be prioritized
-  - User transactions are processed fairly
+- **Prioritize theo type:**
+  - Critical transactions (node registration) có thể được ưu tiên
+  - User transactions được xử lý công bằng
 
-### 2. Block Creation (When Selected by the Central Node)
+### 2. Block Creation (Khi Được Central Node Chọn)
 
-#### 2.1. Receive Block Creation Request from the Central Node
+#### 2.1. Nhận Block Creation Request từ Central Node
 - **Central Node Selection:**
-  - The Central Node selects which Block Creator will create the next block
-  - The Central Node signs the decision and sends it to the selected node
-  - The Block Creator receives the request with:
+  - Central Node chọn Block Creator nào sẽ tạo block tiếp theo
+  - Central Node ký vào quyết định và gửi đến selected node
+  - Block Creator nhận request với:
     - Block creation authorization (signed by Central Node)
-    - Time limit to create the block
+    - Time limit để tạo block
     - Previous block hash
     - Current blockchain state
 
-#### 2.2. Select Transactions from the Pool
+#### 2.2. Select Transactions từ Pool
 - **Transaction Selection Logic:**
-  - Select transactions from the pool by priority (fees, timestamp)
-  - Fill the block up to the block size limit
-  - Ensure the block is not too large
-  - Balance fees and transaction count
+  - Select transactions từ pool theo priority (fees, timestamp)
+  - Fill block đến block size limit
+  - Đảm bảo block không quá lớn
+  - Balance giữa fees và transaction count
 
 - **Transaction Ordering:**
-  - Order transactions within the block
-  - Ensure dependencies are resolved (for example: registration before follow)
+  - Order transactions trong block
+  - Đảm bảo dependencies được resolve (ví dụ: registration trước follow)
 
 #### 2.3. Build Block Structure
 - **Block Header:**
   - Previous block hash
-  - Merkle root of the transactions
+  - Merkle root của transactions
   - Timestamp
   - Block height
   - Difficulty target
-  - Nonce (if proof-of-work is needed)
+  - Nonce (nếu cần proof-of-work)
   - Block Creator's public key
-  - Signature of the Central Node authorization
+  - Signature của Central Node authorization
 
 - **Block Body:**
   - List of transactions
@@ -106,118 +106,118 @@ Block Creator Nodes are the most important nodes in the Deltanium blockchain net
   - Total fees collected
 
 - **Merkle Tree:**
-  - Calculate the Merkle root from all transactions
-  - Build the Merkle tree structure
+  - Calculate Merkle root từ tất cả transactions
+  - Build Merkle tree structure
   - Enable efficient transaction verification
 
 #### 2.4. Sign Block
 - **Block Signing:**
-  - Sign the block with the Block Creator's private key
-  - Include the signature in the block header
-  - Verify the signature before broadcast
+  - Sign block với Block Creator's private key
+  - Include signature trong block header
+  - Verify signature trước khi broadcast
 
 #### 2.5. Broadcast Block
 - **Block Propagation:**
-  - Broadcast the block to all nodes in the network
-  - Send to:
-    - Other Block Creator nodes (to validate)
-    - Inspector nodes (to audit)
-    - User nodes (to sync)
-    - Content Store nodes (to update state)
-    - Router nodes (if needed)
+  - Broadcast block đến tất cả nodes trong network
+  - Send đến:
+    - Other Block Creator nodes (để validate)
+    - Inspector nodes (để audit)
+    - User nodes (để sync)
+    - Content Store nodes (để update state)
+    - Router nodes (nếu cần)
 
 - **Block Announcement:**
-  - Announce the block hash before sending the full block
-  - Nodes can request the full block if needed
+  - Announce block hash trước khi send full block
+  - Nodes có thể request full block nếu cần
 
-### 3. Block Validation (Validate Blocks from Other Nodes)
+### 3. Block Validation (Validate Blocks của Nodes Khác)
 
-#### 3.1. Receive Blocks from Other Block Creators
+#### 3.1. Nhận Blocks từ Other Block Creators
 - **Block Reception:**
-  - Receive blocks broadcast from other Block Creator nodes
-  - Verify that the block format is correct
-  - Check that the block is not a duplicate
+  - Nhận blocks được broadcast từ other Block Creator nodes
+  - Verify block format đúng
+  - Check block không duplicate
 
 #### 3.2. Validate Block Structure
 - **Header Validation:**
-  - Verify the previous block hash matches the local chain
-  - Verify the Merkle root matches the transactions
-  - Verify the timestamp is valid
-  - Verify the block height is correct
-  - Verify the Central Node authorization signature
-  - Verify the Block Creator signature
+  - Verify previous block hash matches local chain
+  - Verify Merkle root matches transactions
+  - Verify timestamp hợp lệ
+  - Verify block height đúng
+  - Verify Central Node authorization signature
+  - Verify Block Creator signature
 
-#### 3.3. Validate All Transactions in the Block
+#### 3.3. Validate All Transactions trong Block
 - **Transaction Validation:**
-  - Validate each transaction in the block:
+  - Validate từng transaction trong block:
     - Signature verification
     - State validation
     - Double-spending check
     - Fee validation
-  - Verify that the transaction order is valid
-  - Verify that there are no duplicate transactions
+  - Verify transaction order hợp lệ
+  - Verify không có duplicate transactions
 
 #### 3.4. Validate Block Against Local State
 - **State Consistency:**
-  - Check that the block does not conflict with the local blockchain state
-  - Verify that state transitions are valid
+  - Check block không conflict với local blockchain state
+  - Verify state transitions hợp lệ
   - Check balances, relationships, etc.
 
-#### 3.5. Signal Acceptance or Report Invalid
+#### 3.5. Signal Acceptance hoặc Report Invalid
 - **Acceptance Signal:**
-  - If the block is valid:
-    - Add the block to the local blockchain
+  - Nếu block valid:
+    - Add block vào local blockchain
     - Update local state
-    - Broadcast an acceptance signal to the network
-    - Remove transactions from the pool (if they are in the block)
+    - Broadcast acceptance signal đến network
+    - Remove transactions từ pool (nếu có trong block)
 
 - **Invalid Report:**
-  - If the block is invalid:
-    - Report to the Central Node
-    - Report to Inspector nodes
-    - Include the reason for rejection
-    - Sign the report with the Block Creator's key
+  - Nếu block invalid:
+    - Report đến Central Node
+    - Report đến Inspector nodes
+    - Include reason for rejection
+    - Sign report với Block Creator's key
 
 ### 4. Blockchain State Management
 
 #### 4.1. Maintain Local Blockchain
 - **Chain Storage:**
-  - Store the full blockchain locally
-  - Maintain a block index
-  - Store block headers and bodies
-  - Optimize storage with pruning (if needed)
+  - Store full blockchain locally
+  - Maintain block index
+  - Store block headers và bodies
+  - Optimize storage với pruning (nếu cần)
 
 #### 4.2. State Updates
 - **Apply Blocks:**
-  - Apply the transactions in the block to state
-  - Update the user registry
+  - Apply transactions trong block vào state
+  - Update user registry
   - Update follow relationships
   - Update post references
   - Update D coin balances
-  - Update the node registry
+  - Update node registry
 
 #### 4.3. Fork Handling
 - **Fork Detection:**
-  - Detect when there are multiple chains
+  - Detect khi có multiple chains
   - Compare chain lengths
   - Compare chain difficulty/work
 
 - **Fork Resolution:**
-  - Choose the longest chain
-  - Revert transactions if needed (reorg)
-  - Update state according to the chosen chain
+  - Chọn longest chain
+  - Revert transactions nếu cần (reorg)
+  - Update state theo chain được chọn
 
 #### 4.4. Chain Synchronization
-- **Sync with the Network:**
-  - Request missing blocks from other nodes
-  - Verify and add blocks to the chain
-  - Sync state with the network
+- **Sync với Network:**
+  - Request missing blocks từ other nodes
+  - Verify và add blocks vào chain
+  - Sync state với network
 
-### 5. Communication with the Central Node
+### 5. Communication với Central Node
 
 #### 5.1. Node Registration
 - **Initial Registration:**
-  - Register with the Central Node
+  - Register với Central Node
   - Provide public key
   - Provide endpoint
   - Stake D coins
@@ -225,20 +225,20 @@ Block Creator Nodes are the most important nodes in the Deltanium blockchain net
 
 #### 5.2. Heartbeat/Health Reporting
 - **Status Updates:**
-  - Send a periodic heartbeat to the Central Node
+  - Send periodic heartbeat đến Central Node
   - Report node status (online, synced, etc.)
   - Report performance metrics
 
 #### 5.3. Receive Block Creation Requests
 - **Block Creation Authorization:**
-  - Receive requests from the Central Node
-  - Verify the Central Node signature
-  - Check the time limit
-  - Create the block within the time limit
+  - Nhận requests từ Central Node
+  - Verify Central Node signature
+  - Check time limit
+  - Create block trong time limit
 
 #### 5.4. Report Issues
 - **Invalid Block Reports:**
-  - Report invalid blocks to the Central Node
+  - Report invalid blocks đến Central Node
   - Report malicious nodes
   - Request penalties
 
@@ -246,37 +246,37 @@ Block Creator Nodes are the most important nodes in the Deltanium blockchain net
 
 #### 6.1. Collect Transaction Fees
 - **Fee Accumulation:**
-  - Collect fees from transactions in blocks this node creates
+  - Collect fees từ transactions trong blocks mình tạo
   - Calculate total fees per block
-  - Store fees in the wallet
+  - Store fees trong wallet
 
 #### 6.2. Fee Distribution
-- **Fee Sharing (if applicable):**
-  - Share fees with the Central Node (if required)
-  - Distribute fees according to the rules
+- **Fee Sharing (nếu có):**
+  - Share fees với Central Node (nếu required)
+  - Distribute fees theo rules
 
 ### 7. Penalty Handling
 
 #### 7.1. Stake Management
 - **Stake Locking:**
-  - Lock D coins when registering as a Block Creator
-  - Stake remains locked for the entire time as a Block Creator
+  - Lock D coins khi register làm Block Creator
+  - Stake được lock trong suốt thời gian là Block Creator
 
-#### 7.2. Penalty for Not Creating a Block in Time
+#### 7.2. Penalty khi Không Tạo Block Kịp Thời
 - **Timeout Penalty:**
-  - If selected by the Central Node but the block is not created within the time limit
-  - The Central Node will:
-    - Cancel the request
+  - Nếu được Central Node chọn nhưng không tạo block trong time limit
+  - Central Node sẽ:
+    - Cancel request
     - Select another Block Creator
-    - Penalize the node (lose a portion of stake)
-  - The Block Creator receives a penalty notification
+    - Penalize node (mất một phần stake)
+  - Block Creator nhận penalty notification
 
-#### 7.3. Penalty for Creating Invalid Blocks
+#### 7.3. Penalty khi Tạo Invalid Blocks
 - **Invalid Block Penalty:**
-  - If an invalid block is created
-  - Inspector nodes may report it
-  - The Central Node may penalize
-  - Lose stake or be removed from the network
+  - Nếu tạo invalid block
+  - Inspector nodes có thể report
+  - Central Node có thể penalize
+  - Mất stake hoặc bị remove khỏi network
 
 ### 8. Performance Optimization
 
@@ -284,13 +284,13 @@ Block Creator Nodes are the most important nodes in the Deltanium blockchain net
 - **Efficient Storage:**
   - Use efficient data structures (hash maps, priority queues)
   - Index transactions by type, fee, timestamp
-  - Fast lookup and removal
+  - Fast lookup và removal
 
 #### 8.2. Block Creation Optimization
 - **Fast Block Assembly:**
   - Optimize transaction selection
   - Fast Merkle tree calculation
-  - Parallel transaction validation (if possible)
+  - Parallel transaction validation (nếu possible)
 
 #### 8.3. Validation Optimization
 - **Fast Block Validation:**
@@ -298,16 +298,16 @@ Block Creator Nodes are the most important nodes in the Deltanium blockchain net
   - Cache validation results
   - Optimize state lookups
 
-## Overall Operating Flows
+## Luồng Hoạt Động Tổng Quan
 
-### Block Creation Flow (When Selected)
+### Luồng Tạo Block (Khi Được Chọn)
 
 ```
-1. Receive block creation request from the Central Node
+1. Nhận block creation request từ Central Node
    ↓
 2. Verify Central Node authorization
    ↓
-3. Select transactions from the pool (by priority)
+3. Select transactions từ pool (theo priority)
    ↓
 4. Validate selected transactions
    ↓
@@ -315,19 +315,19 @@ Block Creator Nodes are the most important nodes in the Deltanium blockchain net
    ↓
 6. Calculate Merkle root
    ↓
-7. Sign block with private key
+7. Sign block với private key
    ↓
-8. Broadcast block to the network
+8. Broadcast block đến network
    ↓
-9. Wait for validations from other Block Creators
+9. Wait for validations từ other Block Creators
    ↓
-10. Collect fees from transactions
+10. Collect fees từ transactions
 ```
 
-### Block Validation Flow (When Receiving a Block from Another Node)
+### Luồng Validate Block (Khi Nhận Block từ Node Khác)
 
 ```
-1. Receive block from the network
+1. Nhận block từ network
    ↓
 2. Verify block format
    ↓
@@ -335,7 +335,7 @@ Block Creator Nodes are the most important nodes in the Deltanium blockchain net
    ↓
 4. Verify Block Creator signature
    ↓
-5. Validate all transactions in the block
+5. Validate all transactions trong block
    ↓
 6. Verify block against local state
    ↓
@@ -345,47 +345,47 @@ Block Creator Nodes are the most important nodes in the Deltanium blockchain net
    - Add to local chain
    - Update state
    - Signal acceptance
-   - Remove transactions from the pool
+   - Remove transactions từ pool
    ↓
 9. If invalid:
    - Report to Central Node
    - Report to Inspector nodes
 ```
 
-## Requirements and Constraints
+## Requirements và Constraints
 
 ### Technical Requirements
-- **Storage:** Full blockchain state (may be several GB to TB)
-- **Network:** High bandwidth to broadcast blocks
-- **CPU:** Fast enough to validate transactions and create blocks
-- **Memory:** Sufficient to maintain the transaction pool
+- **Storage:** Full blockchain state (có thể vài GB đến TB)
+- **Network:** High bandwidth để broadcast blocks
+- **CPU:** Fast để validate transactions và create blocks
+- **Memory:** Đủ để maintain transaction pool
 
 ### Economic Requirements
-- **Stake:** Must stake D coins (penalized if it fails)
-- **Fees:** Receive transaction fees when creating blocks
-- **Costs:** Infrastructure costs (server, bandwidth, storage)
+- **Stake:** Phải stake D coins (bị penalty nếu fail)
+- **Fees:** Nhận transaction fees khi tạo blocks
+- **Costs:** Chi phí infrastructure (server, bandwidth, storage)
 
 ### Operational Requirements
-- **Uptime:** Must be online and responsive
-- **Sync:** Must sync with the network
-- **Security:** Must secure private keys
-- **Monitoring:** Monitor performance and health
+- **Uptime:** Phải online và responsive
+- **Sync:** Phải sync với network
+- **Security:** Phải secure private keys
+- **Monitoring:** Monitor performance và health
 
-## API Endpoints (If Implemented)
+## API Endpoints (Nếu Implement)
 
 ### Internal APIs
-- `POST /block/create` - Create a block when authorized by the Central Node
-- `POST /block/validate` - Validate a block from other nodes
+- `POST /block/create` - Create block khi được Central Node authorize
+- `POST /block/validate` - Validate block từ other nodes
 - `GET /transactions/pool` - Get transaction pool
 - `POST /transactions/add` - Add transaction to pool
 - `GET /chain/status` - Get blockchain status
-- `POST /chain/sync` - Sync with the network
+- `POST /chain/sync` - Sync với network
 
-### External APIs (for other nodes)
+### External APIs (cho other nodes)
 - `GET /block/{blockId}` - Get block by ID
 - `POST /block/broadcast` - Broadcast block
 - `POST /validation/signal` - Signal block acceptance/rejection
-- `GET /transactions/pending` - Get pending transactions (if public)
+- `GET /transactions/pending` - Get pending transactions (nếu public)
 
 ## Security Considerations
 
@@ -393,7 +393,7 @@ Block Creator Nodes are the most important nodes in the Deltanium blockchain net
 - **Private Key Security:**
   - Store private key securely (HSM, encrypted storage)
   - Never expose private key
-  - Use key rotation if needed
+  - Use key rotation nếu cần
 
 ### Block Validation Security
 - **Verify All Signatures:**
@@ -403,7 +403,7 @@ Block Creator Nodes are the most important nodes in the Deltanium blockchain net
 
 ### Network Security
 - **Secure Communication:**
-  - Use TLS/SSL for all communications
+  - Use TLS/SSL cho all communications
   - Authenticate messages
   - Prevent replay attacks
 
@@ -413,7 +413,7 @@ Block Creator Nodes are the most important nodes in the Deltanium blockchain net
   - Check for double-spending
   - Validate all state changes
 
-## Monitoring and Logging
+## Monitoring và Logging
 
 ### Metrics to Monitor
 - **Performance:**
@@ -435,13 +435,13 @@ Block Creator Nodes are the most important nodes in the Deltanium blockchain net
 
 ### Logging
 - **Block Creation:**
-  - Log each block that is created
+  - Log mỗi block được tạo
   - Log transactions included
   - Log fees collected
 
 - **Block Validation:**
   - Log blocks validated
-  - Log invalid blocks and reasons
+  - Log invalid blocks và reasons
   - Log acceptance/rejection signals
 
 - **Errors:**
@@ -449,15 +449,28 @@ Block Creator Nodes are the most important nodes in the Deltanium blockchain net
   - Log network issues
   - Log validation failures
 
-## Conclusion
+## Kết Luận
 
-Block Creator Nodes are the backbone of the Deltanium blockchain, responsible for:
-1. ✅ **Process transactions** and maintain the transaction pool
-2. ✅ **Create blocks** when selected by the Central Node
-3. ✅ **Validate blocks** from other Block Creators
+Block Creator Nodes là backbone của Deltanium blockchain, chịu trách nhiệm:
+1. ✅ **Process transactions** và maintain transaction pool
+2. ✅ **Create blocks** khi được Central Node chọn
+3. ✅ **Validate blocks** từ other Block Creators
 4. ✅ **Maintain blockchain state** locally
-5. ✅ **Communicate** with the Central Node and other nodes
-6. ✅ **Collect fees** and manage stake
-7. ✅ **Handle penalties** if they fail
+5. ✅ **Communicate** với Central Node và other nodes
+6. ✅ **Collect fees** và manage stake
+7. ✅ **Handle penalties** nếu fail
 
-This is an important role and requires high performance, security, and reliability.
+Đây là một role quan trọng và yêu cầu high performance, security, và reliability.
+
+
+
+
+
+
+
+
+
+
+
+
+

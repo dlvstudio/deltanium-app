@@ -39,7 +39,7 @@ See [BLOCKCHAIN_PLAN.md](BLOCKCHAIN_PLAN.md) for the detailed production readine
   - End-to-end encryption for private content
   - Transparent content attribution and ownership
   - Storage contracts: App and Store sign a contract (hash or message); Store submits a single `StorageOperation` tx with the contract in **envelope format** (`hash`, `appSignature`, `storageNodeSignature`, `content`). Contract **content** is dynamic; only `appPublicKey` and `storageNodePublicKey` are required for chain validation. See [BLOCKCHAIN_PLAN.md](BLOCKCHAIN_PLAN.md) for envelope spec, V1/V2 signing, and Blocker behaviour.
-  - **Central API** selects a blocker: for each request (decision to accept a tx or block-slot to create a block), Central takes the list of active block creator nodes and **randomly selects one node**; only the selected node receives `selected`/`granted` and the signature. The Blocker must store the Central API public key (in `node_info.json` or env) and verify the signature (signed over the SHA256 of the message). Details: [BLOCKCHAIN_PLAN.md](BLOCKCHAIN_PLAN.md) — sections "How Central API selects a blocker", "Decision Format", "Block-slot and block signatures".
+  - **Central API** chọn blocker: với mỗi request (decision nhận tx hoặc block-slot tạo block), Central lấy danh sách active block creator nodes và **chọn ngẫu nhiên một node**; chỉ node được chọn mới nhận `selected`/`granted` và chữ ký. Blocker phải lưu Central API public key (trong `node_info.json` hoặc env) và verify chữ ký (ký vào SHA256 của message). Chi tiết: [BLOCKCHAIN_PLAN.md](BLOCKCHAIN_PLAN.md) — mục "How Central API selects a blocker", "Decision Format", "Block-slot and block signatures".
 
 - **Proxy Re-Encryption (PRE)**
   - Hybrid approach for followers-only sharing:
@@ -50,10 +50,11 @@ See [BLOCKCHAIN_PLAN.md](BLOCKCHAIN_PLAN.md) for the detailed production readine
   - Rekey sync is triggered after successful login/registration
   - Client-side capsule transform and decapsulation using native Umbral PRE (FFI)
 
-- **Storage Node Integration**
-  - Discovers available storage nodes via the central API (`GET /api/storenode/list`).
-  - Selects a node when creating a post.
-  - Uploads encrypted post metadata (per recipient for followers/private) and encrypted content blocks to the selected node.
+- **Storage Node Integration (N-of-M)**
+  - Discovers stores via `GET /api/storenode/list`.
+  - Selects **N** nodes (`REPLICATION_FACTOR`, default 2) and uploads the same encrypted `fileId` (full replicas).
+  - Registers placements with signed `POST /api/storedfile/register-replicas`.
+  - Architecture: see [ARCHITECT.MD](ARCHITECT.MD).
 
 ## Responsive Design
 

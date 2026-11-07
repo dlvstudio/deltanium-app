@@ -1,44 +1,44 @@
-# Deltanium Chat – Architecture and Technical Solution Proposal (v2)
+# Deltanium Chat – Đề xuất Kiến trúc và Giải pháp Kỹ thuật (v2)
 
-> Detailed architecture proposal for E2E chat in the Deltanium ecosystem, with **two modes**: **Online (P2P)** and **Offline (File-based)**.
+> Tài liệu đề xuất chi tiết kiến trúc chat E2E cho hệ sinh thái Deltanium, với **hai chế độ**: **Online (P2P)** và **Offline (File-based)**.
 
-## 1. Overview of requirements
+## 1. Yêu cầu tổng quan
 
-- **1-1 Chat**: Users chat directly with each other (DM)
-- **End-to-end encryption (E2E)**: Only the sender and recipient can read the content
-- **Compatible with the current system**: Leverage the identity model (publicKey), crypto (ECIES), Central API, and Store
-- **Two distinct modes**:
-  - **Online**: When both users enable online mode → direct P2P connection, real-time
-  - **Offline**: When the recipient is offline → each message = 1 file, leveraging existing Store infrastructure
+- **Chat 1-1**: Người dùng chat trực tiếp với nhau (DM)
+- **Mã hóa đầu cuối (E2E)**: Chỉ người gửi và người nhận đọc được nội dung
+- **Tương thích hiện trạng**: Tận dụng mô hình identity (publicKey), crypto (ECIES), Central API và Store
+- **Hai chế độ rõ ràng**:
+  - **Online**: Khi cả 2 user cùng bật chế độ online → kết nối P2P trực tiếp, real-time
+  - **Offline**: Khi người nhận offline → mỗi tin nhắn = 1 file, tận dụng hạ tầng Store hiện có
 
 ---
 
-## 2. Solution overview
+## 2. Tổng quan giải pháp
 
-### 2.1 Core idea
+### 2.1 Ý tưởng chính
 
-| Mode | Condition | Mechanism | Data flow |
-|------|-----------|-----------|-----------|
-| **Online (P2P)** | User A and B both enable "online" with the Central API | Direct peer-to-peer connection | Messages go directly A ↔ B, not through the server |
-| **Offline (File-based)** | Recipient is offline or has not enabled online | File sharing | Each message = 1 file (metadata + block) on Store |
+| Chế độ | Điều kiện | Cơ chế | Luồng dữ liệu |
+|--------|-----------|--------|---------------|
+| **Online (P2P)** | User A và B cùng bật "online" với Central API | Kết nối trực tiếp peer-to-peer | Tin nhắn đi trực tiếp A ↔ B, không qua server |
+| **Offline (File-based)** | Người nhận offline hoặc không bật online | Chia sẻ file | Mỗi tin = 1 file (metadata + block) trên Store |
 
-### 2.2 Central API role
+### 2.2 Vai trò Central API
 
-- **Online mode**: Only acts as a **presence registry** + **signaling server** for WebRTC (SDP/ICE exchange)
-- **Offline mode**: Stores **message metadata** (conversationId, messageId, blockId, storeNodeId) so the recipient can fetch when online
-- **Does not relay message content** in either mode
+- **Online mode**: Chỉ làm **presence registry** + **signaling server** cho WebRTC (trao đổi SDP/ICE)
+- **Offline mode**: Lưu **metadata tin nhắn** (conversationId, messageId, blockId, storeNodeId) để người nhận fetch khi online
+- **Không relay nội dung tin nhắn** trong cả hai chế độ
 
-### 2.3 Overall diagram
+### 2.3 Sơ đồ tổng thể
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────┐
-│                        DELTANIUM CHAT – TWO MODES                                        │
+│                        DELTANIUM CHAT – HAI CHẾ ĐỘ                                       │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 
-  ONLINE MODE (both users have online enabled):
+  CHẾ ĐỘ ONLINE (cả 2 user bật online):
   ┌──────────┐                                                    ┌──────────┐
   │  Alice   │◀──────────────── P2P (WebRTC) ────────────────────▶│   Bob    │
-  │  (App)   │         E2E-encrypted messages sent directly       │  (App)   │
+  │  (App)   │         Tin nhắn mã hóa E2E trực tiếp              │  (App)   │
   └────┬─────┘                                                    └────┬─────┘
        │                                                               │
        │   POST /api/chat/online    POST /api/chat/online               │
@@ -50,109 +50,106 @@
                          │   Central API       │
                          │ - Presence registry │
                          │ - WebRTC signaling  │
-                         │ (does not contain   │
-                         │  content)           │
+                         │ (không chứa nội dung)│
                          └─────────────────────┘
 
-  OFFLINE MODE (Bob is not online):
+  CHẾ ĐỘ OFFLINE (Bob không online):
   ┌──────────┐      upload file       ┌──────────────┐     metadata    ┌─────────────┐
   │  Alice   │ ──────────────────────▶│ Store Node   │◀────────────────│ Central API │
-  │  (App)   │  (1 message = 1 file)  │ (encrypted   │  POST /chat/msg │             │
-  └──────────┘                        │  block)      │                 └──────┬──────┘
-                                      └──────┬───────┘                        │
-                                             │                                │
-                                             │  Bob comes back online →       │
-                                             │  fetch block                   │
-                                             │  GET /api/file/block/{blockId} │
-                                             ▼                                │
-                                      ┌──────────┐   GET /chat/messages       │
-                                      │   Bob    │◀───────────────────────────│
-                                      │  (App)   │                            │
-                                      └──────────┘                            │
+  │  (App)   │  (1 tin = 1 file)      │ (block mã hóa)│  POST /chat/msg │             │
+  └──────────┘                        └──────┬───────┘                 └──────┬──────┘
+                                             │                                 │
+                                             │  Bob online lại → fetch block    │
+                                             │  GET /api/file/block/{blockId}    │
+                                             ▼                                 │
+                                      ┌──────────┐   GET /chat/messages        │
+                                      │   Bob    │◀────────────────────────────│
+                                      │  (App)   │                             │
+                                      └──────────┘                             │
 ```
 
 ---
 
-## 3. Online mode (P2P) details
+## 3. Chi tiết chế độ Online (P2P)
 
-### 3.1 Operating flow
+### 3.1 Luồng hoạt động
 
 ```
-1. Alice opens the app → enables "Online mode" → POST /api/chat/online { pubKey, heartbeat }
-2. Bob does the same → POST /api/chat/online { pubKey, heartbeat }
-3. Central API stores: user_online_sessions.json { pubKey, lastSeen, signalingData? }
-4. Alice opens chat with Bob → GET /api/chat/online-status?user=Bob
-   → API returns: { online: true, signalingEndpoint? }
-5. Both are online → establish a WebRTC connection:
-   - Alice creates an offer → sends via API (signaling) → Bob receives
-   - Bob creates an answer → sends via API → Alice receives
-   - ICE candidates are exchanged via API
-6. WebRTC DataChannel is established → messages are sent directly P2P
-7. Encryption: ECIES(K, pk_recipient) per message (or ECDH session key)
+1. Alice mở app → bật "Chế độ online" → POST /api/chat/online { pubKey, heartbeat }
+2. Bob tương tự → POST /api/chat/online { pubKey, heartbeat }
+3. Central API lưu: user_online_sessions.json { pubKey, lastSeen, signalingData? }
+4. Alice mở chat với Bob → GET /api/chat/online-status?user=Bob
+   → API trả: { online: true, signalingEndpoint? }
+5. Cả 2 online → thiết lập kết nối WebRTC:
+   - Alice tạo offer → gửi qua API (signaling) → Bob nhận
+   - Bob tạo answer → gửi qua API → Alice nhận
+   - ICE candidates trao đổi qua API
+6. DataChannel WebRTC thiết lập → tin nhắn gửi trực tiếp P2P
+7. Mã hóa: ECIES(K, pk_recipient) per message (hoặc session key ECDH)
 ```
 
 ### 3.2 Presence & Signaling API
 
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | /api/chat/online | Enable online mode (heartbeat every 30s) |
-| DELETE | /api/chat/online | Disable online mode |
-| GET | /api/chat/online-status?user={pubKey} | Check whether a user is online |
-| POST | /api/chat/signaling/offer | Send WebRTC offer (SDP only, no content) |
-| POST | /api/chat/signaling/answer | Send WebRTC answer |
-| POST | /api/chat/signaling/ice | Send ICE candidate |
+| Method | Path | Mô tả |
+|--------|------|-------|
+| POST | /api/chat/online | Bật chế độ online (heartbeat mỗi 30s) |
+| DELETE | /api/chat/online | Tắt chế độ online |
+| GET | /api/chat/online-status?user={pubKey} | Kiểm tra user có online không |
+| POST | /api/chat/signaling/offer | Gửi WebRTC offer (chỉ SDP, không nội dung) |
+| POST | /api/chat/signaling/answer | Gửi WebRTC answer |
+| POST | /api/chat/signaling/ice | Gửi ICE candidate |
 
-### 3.3 P2P technology
+### 3.3 Công nghệ P2P
 
-- **WebRTC DataChannel**: Suitable for Flutter (package `flutter_webrtc`)
-- **NAT traversal**: WebRTC uses STUN/TURN; a public STUN server can be used (or self-hosted)
-- **Signaling**: Central API only relays SDP/ICE and does not read content
+- **WebRTC DataChannel**: Phù hợp cho Flutter (package `flutter_webrtc`)
+- **NAT traversal**: WebRTC dùng STUN/TURN; có thể dùng public STUN server (hoặc tự host)
+- **Signaling**: Central API chỉ relay SDP/ICE, không đọc nội dung
 
-### 3.4 Switching Online ↔ Offline
+### 3.4 Chuyển đổi Online ↔ Offline
 
-- When **Bob goes offline** during a chat: Alice sends a message → fallback to file mode
-- When **Bob comes back online**: Bob's app fetches offline messages from Store (using metadata on the API)
-- When **P2P connection is lost**: Retry P2P; if it fails → switch to file mode
+- Khi **Bob offline** trong lúc chat: Alice gửi tin → fallback sang chế độ file
+- Khi **Bob online lại**: App Bob fetch tin nhắn offline từ Store (theo metadata trên API)
+- Khi **P2P mất kết nối**: Retry P2P; nếu thất bại → chuyển sang file mode
 
 ---
 
-## 4. Offline mode (File-based) details
+## 4. Chi tiết chế độ Offline (File-based)
 
-### 4.1 Principles
+### 4.1 Nguyên tắc
 
-- **Each message = 1 file** (1 metadata entry + 1 block)
-- Leverage **100% of the existing infrastructure**: `upload-metadata-raw`, `upload-file-block-raw`, `storedfile/register`
+- **Mỗi tin nhắn = 1 file** (1 metadata entry + 1 block)
+- Tận dụng **100% hạ tầng hiện có**: `upload-metadata-raw`, `upload-file-block-raw`, `storedfile/register`
 - `FileMetadata.Type = "chat_message"`
-- `RecipientPubKey` = recipient's public key (1-1)
+- `RecipientPubKey` = public key người nhận (1-1)
 - `encryptedKey` = ECIES(K, pk_recipient)
 
-### 4.2 Offline message send flow
+### 4.2 Luồng gửi tin nhắn offline
 
 ```
-1. Alice wants to send "Hello" to Bob (Bob is offline)
-2. App creates K (random 32 bytes)
+1. Alice muốn gửi "Hello" cho Bob (Bob offline)
+2. App tạo K (random 32 bytes)
 3. payload = AES-GCM(K, JSON({ text: "Hello", createdAt, senderPubKey }))
 4. encryptedKey = ECIES(K, pk_Bob)
-5. Select a Store Node from GET /api/storenode/list
-6. Upload metadata + block the same way as a post:
+5. Chọn Store Node từ GET /api/storenode/list
+6. Upload metadata + block giống post:
    - POST Store /api/file/upload-metadata-raw (Type: chat_message, RecipientPubKey: Bob)
    - POST Store /api/file/upload-file-block-raw
-7. POST Central API /api/storedfile/register (or /api/chat/message)
-8. API stores metadata: { conversationId, messageId, blockId, storeNodeId, senderPubKey }
+7. POST Central API /api/storedfile/register (hoặc /api/chat/message)
+8. API lưu metadata: { conversationId, messageId, blockId, storeNodeId, senderPubKey }
 ```
 
-### 4.3 Offline message receive flow
+### 4.3 Luồng nhận tin nhắn offline
 
 ```
-1. Bob comes back online and opens the app
+1. Bob online lại, mở app
 2. GET /api/chat/messages?recipient={BobPubKey}&since={lastSync}
-3. API returns a list of metadata (blockId, storeNodeId, senderPubKey)
-4. For each message, Bob: GET Store /api/file/block/{blockId}
-5. ECIES decrypt → AES decrypt → display
-6. Mark as read (optional)
+3. API trả danh sách metadata (blockId, storeNodeId, senderPubKey)
+4. Bob với mỗi message: GET Store /api/file/block/{blockId}
+5. ECIES decrypt → AES decrypt → hiển thị
+6. Đánh dấu đã đọc (optional)
 ```
 
-### 4.4 Chat message metadata format
+### 4.4 Định dạng metadata chat message
 
 **Store (FileMetadata):**
 ```json
@@ -168,7 +165,7 @@
 }
 ```
 
-**Central API (index only):**
+**Central API (chỉ index):**
 ```json
 {
   "messageId": "msg_uuid",
@@ -183,7 +180,7 @@
 
 ---
 
-## 5. Data model
+## 5. Mô hình dữ liệu
 
 ### 5.1 Conversation (Central API)
 
@@ -206,65 +203,65 @@
 }
 ```
 
-### 5.3 Store – Reuse
+### 5.3 Store – Tái sử dụng
 
-- Use `upload-metadata-raw` + `upload-file-block-raw` with `type: "chat_message"`
-- No new Store endpoint is needed
-- FileMetadata already supports `Type`, `RecipientPubKey`, `EncryptedKey`
+- Dùng `upload-metadata-raw` + `upload-file-block-raw` với `type: "chat_message"`
+- Không cần endpoint mới trên Store
+- FileMetadata đã hỗ trợ `Type`, `RecipientPubKey`, `EncryptedKey`
 
 ---
 
-## 6. Proposed API summary
+## 6. API đề xuất tổng hợp
 
 ### 6.1 Central API – Chat Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | /api/chat/online | Enable online mode (heartbeat) |
-| DELETE | /api/chat/online | Disable online mode |
-| GET | /api/chat/online-status?user={pubKey} | Check whether a user is online |
-| POST | /api/chat/conversation | Create or get a conversation with a user |
-| GET | /api/chat/conversations | Conversation list |
-| POST | /api/chat/message | Register a message (metadata only, for offline) |
-| GET | /api/chat/messages/{conversationId} | Message metadata list (paginated) |
-| GET | /api/chat/unread-count | Unread message count |
+| Method | Path | Mô tả |
+|--------|------|-------|
+| POST | /api/chat/online | Bật chế độ online (heartbeat) |
+| DELETE | /api/chat/online | Tắt chế độ online |
+| GET | /api/chat/online-status?user={pubKey} | Kiểm tra user online |
+| POST | /api/chat/conversation | Tạo hoặc lấy conversation với 1 user |
+| GET | /api/chat/conversations | Danh sách conversation |
+| POST | /api/chat/message | Đăng ký message (metadata only, cho offline) |
+| GET | /api/chat/messages/{conversationId} | Danh sách message metadata (paginated) |
+| GET | /api/chat/unread-count | Số tin chưa đọc |
 
-### 6.2 Signaling (used only when both are online)
+### 6.2 Signaling (chỉ dùng khi cả 2 online)
 
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | /api/chat/signaling/offer | Send WebRTC offer (Alice → Bob) |
-| POST | /api/chat/signaling/answer | Send WebRTC answer (Bob → Alice) |
-| POST | /api/chat/signaling/ice | Send ICE candidate |
+| Method | Path | Mô tả |
+|--------|------|-------|
+| POST | /api/chat/signaling/offer | Gửi WebRTC offer (Alice → Bob) |
+| POST | /api/chat/signaling/answer | Gửi WebRTC answer (Bob → Alice) |
+| POST | /api/chat/signaling/ice | Gửi ICE candidate |
 
-### 6.3 Store – Unchanged
+### 6.3 Store – Không đổi
 
-- `POST /api/file/upload-metadata-raw` with `type: "chat_message"`
+- `POST /api/file/upload-metadata-raw` với `type: "chat_message"`
 - `POST /api/file/upload-file-block-raw`
 - `GET /api/file/block/{blockId}`
 
 ---
 
-## 7. E2E encryption – Leverage existing infrastructure
+## 7. Mã hóa E2E – Tận dụng hạ tầng hiện có
 
-Chat **does not require new crypto** – reuse the entire existing `CryptoService`, `EciesService`, `FileCryptoService`, and `FileUploadService` in the app.
+Chat **không cần xây dựng crypto mới** – tái sử dụng toàn bộ `CryptoService`, `EciesService`, `FileCryptoService` và `FileUploadService` đã có trong app.
 
-### 7.1 Existing infrastructure (lib/services/)
+### 7.1 Hạ tầng sẵn có (lib/services/)
 
-| Service | Function | Used for Chat |
-|---------|----------|---------------|
-| **EciesService** | `encryptWithPublicKey(data, pk)` / `decryptWithPrivateKey(data, mnemonic)` | Encrypt K (32 bytes) for the recipient |
-| **FileCryptoService** | `encryptAndSplitFile()`, `decryptMetadataBlock()`, `_encryptData()` / `_decryptData()` | Offline: encrypt message; P2P: compatible format |
-| **FileCryptoService** | `getCachedSymmetricKey()`, `cacheSymmetricKey()` | Cache the key when decrypting many consecutive messages |
-| **CryptoService** | `convertToCompressedPublicKey()`, `normalizePublicKey()` | Normalize public keys |
-| **FileUploadService** | `uploadEncryptedFile()` | Offline: upload metadata + block to Store |
+| Service | Chức năng | Dùng cho Chat |
+|---------|-----------|---------------|
+| **EciesService** | `encryptWithPublicKey(data, pk)` / `decryptWithPrivateKey(data, mnemonic)` | Mã hóa K (32 bytes) cho recipient |
+| **FileCryptoService** | `encryptAndSplitFile()`, `decryptMetadataBlock()`, `_encryptData()` / `_decryptData()` | Offline: encrypt message; P2P: format tương thích |
+| **FileCryptoService** | `getCachedSymmetricKey()`, `cacheSymmetricKey()` | Cache key khi decrypt nhiều tin liên tiếp |
+| **CryptoService** | `convertToCompressedPublicKey()`, `normalizePublicKey()` | Chuẩn hóa public key |
+| **FileUploadService** | `uploadEncryptedFile()` | Offline: upload metadata + block lên Store |
 
-### 7.2 Offline (File-based) – Call FileCryptoService directly
+### 7.2 Offline (File-based) – Gọi trực tiếp FileCryptoService
 
-Each message = 1 file with **1 content block**. Call `FileCryptoService.encryptAndSplitFile()`:
+Mỗi tin nhắn = 1 file với **1 block nội dung**. Gọi `FileCryptoService.encryptAndSplitFile()`:
 
 ```dart
-// ChatService sends an offline message
+// ChatService gửi tin offline
 final payload = jsonEncode({
   'text': text,
   'createdAt': DateTime.now().toIso8601String(),
@@ -281,29 +278,29 @@ final processed = await FileCryptoService.encryptAndSplitFile(
   fileType: 'chat_message',
   shareType: 'me',
 );
-// processed['metadataEntries'] – select the entry with recipientPubKey = recipient
-// processed['blocks'] – upload to Store like a post
+// processed['metadataEntries'] – chọn entry có recipientPubKey = recipient
+// processed['blocks'] – upload lên Store như post
 ```
 
-**Decrypt** (Bob receives a message): use the same flow as `related_files_widget` / feed:
+**Decrypt** (Bob nhận tin): dùng flow giống `related_files_widget` / feed:
 
-1. Get metadata from Store (includes `encryptedKey`, `recipientPubKey`, `contentBlockIds`)
-2. `FileCryptoService.decryptMetadataBlock(storeMetadata, encryptedMetadataBlock, myPubKey, mnemonic)` → returns metadata + `_symmetricKey`
-3. Get the content block from Store (`GET /api/file/block/{blockId}`)
+1. Lấy metadata từ Store (có `encryptedKey`, `recipientPubKey`, `contentBlockIds`)
+2. `FileCryptoService.decryptMetadataBlock(storeMetadata, encryptedMetadataBlock, myPubKey, mnemonic)` → trả metadata + `_symmetricKey`
+3. Lấy content block từ Store (`GET /api/file/block/{blockId}`)
 4. `FileCryptoService.decryptRawBlockWithKey(encryptedContentBlock, symmetricKey)` → JSON text
-5. Cache: `getCachedSymmetricKey()` / `cacheSymmetricKey()` if decrypting many consecutive messages
+5. Cache: `getCachedSymmetricKey()` / `cacheSymmetricKey()` nếu decrypt nhiều tin liên tiếp
 
-**Format matches file/post**:
-- `encryptedKey` = ECIES(K, pk_recipient) – standard ECIES (secp256k1, AES-CBC, HMAC-SHA256)
-- Payload block = AES-GCM encrypted with K
-- Store does not need changes; `FileMetadata` already supports `type`, `recipientPubKey`, `encryptedKey`
+**Định dạng khớp với file/post**:
+- `encryptedKey` = ECIES(K, pk_recipient) – chuẩn ECIES (secp256k1, AES-CBC, HMAC-SHA256)
+- Payload block = AES-GCM encrypted với K
+- Store không cần sửa, `FileMetadata` đã hỗ trợ `type`, `recipientPubKey`, `encryptedKey`
 
-### 7.3 Online (P2P) – Use ECIES + AES with the same format
+### 7.3 Online (P2P) – Dùng ECIES + AES trùng format
 
-So that **online and offline share the same decrypt logic**, P2P also uses the same format:
+Để **online và offline dùng chung decrypt logic**, P2P cũng dùng cùng format:
 
 ```dart
-// ChatP2PService sends a message over DataChannel
+// ChatP2PService gửi tin qua DataChannel
 final K = Uint8List.fromList(List.generate(32, (_) => Random.secure().nextInt(256)));
 final encryptedKey = await EciesService.encryptWithPublicKey(
   data: K,
@@ -314,10 +311,10 @@ final encryptedPayload = await FileCryptoService.testEncryptData(
   Uint8List.fromList(payload),
   K,
 );
-// Send: [encryptedKey | encryptedPayload] or {encryptedKey: base64, payload: base64}
+// Gửi: [encryptedKey | encryptedPayload] hoặc {encryptedKey: base64, payload: base64}
 ```
 
-**Decrypt** (Bob receives via P2P):
+**Decrypt** (Bob nhận qua P2P):
 
 ```dart
 final K = await FileCryptoService.decryptSymmetricKeyWithPrivateKey(
@@ -327,34 +324,34 @@ final K = await FileCryptoService.decryptSymmetricKeyWithPrivateKey(
 final decrypted = await FileCryptoService.decryptRawBlockWithKey(payloadBytes, K);
 ```
 
-### 7.4 Unified format – Online and Offline
+### 7.4 Thống nhất format – Online và Offline
 
-| Component | Online (P2P) | Offline (File) |
-|-----------|--------------|----------------|
+| Thành phần | Online (P2P) | Offline (File) |
+|------------|--------------|----------------|
 | encryptedKey | EciesService.encryptWithPublicKey | encryptAndSplitFile (sharedWithPublicKeys) |
-| Payload | FileCryptoService.testEncryptData | Same (AES-CBC, IV-prefixed) |
-| Decrypt key | FileCryptoService.decryptSymmetricKeyWithPrivateKey | decryptMetadataBlock (returns `_symmetricKey`) |
-| Decrypt payload | FileCryptoService.decryptRawBlockWithKey | Same |
+| Payload | FileCryptoService.testEncryptData | Cùng (AES-CBC, IV-prefixed) |
+| Decrypt key | FileCryptoService.decryptSymmetricKeyWithPrivateKey | decryptMetadataBlock (trả `_symmetricKey`) |
+| Decrypt payload | FileCryptoService.decryptRawBlockWithKey | Cùng |
 
-→ **One decrypt set** is used for both P2P and file; only the data source differs (DataChannel vs Store).
+→ **Một bộ decrypt** dùng cho cả P2P và file; chỉ khác nguồn dữ liệu (DataChannel vs Store).
 
-### 7.5 Not used
+### 7.5 Không dùng
 
-- PRE (Umbral): 1-1 chat only needs ECIES
-- Signal Protocol / Double Ratchet: can be upgraded later; not needed for MVP
+- PRE (Umbral): chat 1-1 chỉ cần ECIES
+- Signal Protocol / Double Ratchet: có thể nâng cấp sau, không cần cho MVP
 
 ---
 
-## 8. App (Flutter) – Proposed changes
+## 8. App (Flutter) – Thay đổi đề xuất
 
 ### 8.1 Services
 
 ```
 lib/services/
-├── chat_service.dart           # Send/receive, choose mode (P2P vs file)
+├── chat_service.dart           # Gửi/nhận, chọn mode (P2P vs file)
 ├── chat_p2p_service.dart       # WebRTC DataChannel, signaling
 ├── chat_presence_service.dart  # Online/offline, heartbeat
-└── (reuse) crypto_service, file_crypto_service, file_upload_service
+└── (tái dùng) crypto_service, file_crypto_service, file_upload_service
 ```
 
 ### 8.2 Models
@@ -373,7 +370,7 @@ lib/models/
 lib/features/messages/
 ├── screens/
 │   ├── messages_screen.dart          # List conversations
-│   └── chat_conversation_screen.dart # Thread with 1 user
+│   └── chat_conversation_screen.dart # Thread với 1 user
 ├── widgets/
 │   ├── conversation_tile.dart
 │   ├── message_bubble.dart
@@ -381,80 +378,80 @@ lib/features/messages/
 │   └── online_indicator.dart        # Badge "online" / "offline"
 ```
 
-### 8.4 Packages to add
+### 8.4 Packages cần thêm
 
-- `flutter_webrtc` – WebRTC DataChannel for P2P
+- `flutter_webrtc` – WebRTC DataChannel cho P2P
 - (Optional) STUN/TURN server config
 
 ---
 
-## 9. Implementation roadmap
+## 9. Lộ trình triển khai
 
-### Phase 1: Offline mode (File-based) – 2–3 weeks
+### Phase 1: Offline mode (File-based) – 2–3 tuần
 
 1. **API**: ChatController (conversation, message metadata, JSON file)
-2. **Store**: Use file blocks with `type: "chat_message"` (no Store changes needed)
-3. **App**: ChatService (REST), upload/download messages like files, MessagesScreen + ChatConversationScreen
-4. **Polling**: Bob fetches messages every 10–30s when chat is open
+2. **Store**: Dùng file block với `type: "chat_message"` (không cần sửa Store)
+3. **App**: ChatService (REST), upload/download message như file, MessagesScreen + ChatConversationScreen
+4. **Polling**: Bob fetch messages mỗi 10–30s khi mở chat
 
-### Phase 2: Presence & Online mode – 1–2 weeks
+### Phase 2: Presence & Online mode – 1–2 tuần
 
 5. **API**: POST/DELETE /api/chat/online, GET online-status
-6. **App**: ChatPresenceService, toggle "Online mode", display online/offline status
-7. **Logic**: If the recipient is offline → use file mode; if online → prepare P2P
+6. **App**: ChatPresenceService, toggle "Chế độ online", hiển thị trạng thái online/offline
+7. **Logic**: Nếu người nhận offline → dùng file mode; nếu online → chuẩn bị P2P
 
-### Phase 3: P2P (WebRTC) – 2–3 weeks
+### Phase 3: P2P (WebRTC) – 2–3 tuần
 
 8. **API**: Signaling endpoints (offer, answer, ice)
-9. **App**: ChatP2PService with flutter_webrtc, DataChannel connection
-10. **Flow**: When both are online → establish P2P, send messages directly
-11. **Fallback**: P2P fails → switch to file mode
+9. **App**: ChatP2PService với flutter_webrtc, kết nối DataChannel
+10. **Flow**: Khi cả 2 online → thiết lập P2P, gửi tin trực tiếp
+11. **Fallback**: P2P lỗi → chuyển sang file mode
 
-### Phase 4: Optimization – 1–2 weeks
+### Phase 4: Tối ưu – 1–2 tuần
 
-12. Offline queue: store unsent messages, retry when network is available
-13. Unread count, badge
-14. Typing indicator (P2P: via DataChannel; Offline: not supported)
+12. Offline queue: lưu tin chưa gửi, retry khi có mạng
+13. Đếm chưa đọc, badge
+14. Typing indicator (P2P: qua DataChannel; Offline: không support)
 
-### Phase 5 (optional)
+### Phase 5 (tùy chọn)
 
-15. Send files/media in chat (reuse FileUploadService)
-16. Group chat – needs multi-recipient ECIES or Sender Key
-
----
-
-## 10. Comparison with the previous version (Hybrid WebSocket)
-
-| Criterion | Previous version (Hybrid) | New version (P2P + File) |
-|----------|---------------------------|--------------------------|
-| **Online** | WebSocket relay via API | Direct P2P, no relay |
-| **API load** | API relays every message | API only does presence + signaling |
-| **Security** | API does not read content | API does not know the content; P2P does not go through the server |
-| **Offline** | Store persists, API pushes metadata | Store persists, each message = 1 file |
-| **Scale** | API bottleneck with many users | P2P distributes the load |
+15. Gửi file/media trong chat (tái dùng FileUploadService)
+16. Group chat – cần ECIES multi-recipient hoặc Sender Key
 
 ---
 
-## 11. Risks and mitigations
+## 10. So sánh với bản cũ (Hybrid WebSocket)
 
-| Risk | Mitigation |
-|------|------------|
-| NAT/Firewall blocks P2P | Free STUN server (Google, etc.); TURN if needed |
-| P2P cannot be established | Automatic fallback to file mode |
-| Messages lost when Store fails | Replicate blocks; optional backup metadata on the API |
-| Recipient is offline for a long time | Message metadata on the API; fetch history when online |
-| Heartbeat not sent | 60s timeout → treat as offline |
+| Tiêu chí | Bản cũ (Hybrid) | Bản mới (P2P + File) |
+|----------|-----------------|------------------------|
+| **Online** | WebSocket relay qua API | P2P trực tiếp, không relay |
+| **Tải API** | API relay mọi tin nhắn | API chỉ presence + signaling |
+| **Bảo mật** | API không đọc nội dung | API không biết nội dung, P2P không qua server |
+| **Offline** | Store lưu, API push metadata | Store lưu, mỗi tin = 1 file |
+| **Scale** | API bottleneck khi nhiều user | P2P phân tán tải |
 
 ---
 
-## 12. Conclusion
+## 11. Rủi ro và giảm thiểu
 
-- **Online**: The user enables online mode with the Central API; when both are online → P2P connection (WebRTC), messages go directly, API only does presence + signaling.
-- **Offline**: Each message = 1 file on Store, leveraging `upload-metadata-raw`, `upload-file-block-raw`, `type: "chat_message"`; Central API stores metadata for fetch.
-- **Encryption**: 1-1 ECIES, compatible with the existing CryptoService.
-- **Integration**: Reuse Store, FileUploadService, CryptoService; add ChatP2PService, ChatPresenceService, and chat UI.
+| Rủi ro | Giảm thiểu |
+|--------|------------|
+| NAT/Firewall chặn P2P | STUN server miễn phí (Google, etc.); TURN nếu cần |
+| P2P không thiết lập được | Fallback sang file mode tự động |
+| Tin nhắn mất khi Store lỗi | Replicate blocks; optional backup metadata trên API |
+| Người nhận offline lâu | Message metadata trên API; fetch history khi online |
+| Heartbeat quên gửi | Timeout 60s → coi là offline |
 
-This document serves as the spec for detailed implementation and task breakdown.
+---
+
+## 12. Kết luận
+
+- **Online**: User bật chế độ online với Central API; khi cả 2 online → kết nối P2P (WebRTC), tin nhắn trực tiếp, API chỉ làm presence + signaling.
+- **Offline**: Mỗi tin nhắn = 1 file trên Store, tận dụng `upload-metadata-raw`, `upload-file-block-raw`, `type: "chat_message"`; Central API lưu metadata để fetch.
+- **Mã hóa**: ECIES 1-1, tương thích CryptoService hiện có.
+- **Tích hợp**: Tái sử dụng Store, FileUploadService, CryptoService; thêm ChatP2PService, ChatPresenceService và UI chat.
+
+Tài liệu này dùng làm spec cho implementation chi tiết và task breakdown.
 
 ## Blockchain Integration
 

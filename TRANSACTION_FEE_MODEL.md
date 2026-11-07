@@ -26,21 +26,21 @@
 ├─────────────────────────────────────────────────────┤
 │                                                       │
 │  👤 USER NODE (User Client/Wallet)                  │
-│     - Create transactions, manage private keys      │
+│     - Tạo transactions, quản lý private key         │
 │     - Pay fees, receive transfers                    │
 │                                                       │
 │  🏢 CENTRAL NODE (Deltanium-API Server)             │
-│     - Authenticate users, store metadata            │
-│     - Manage vouchers and user profiles             │
-│     - Control authorization                         │
+│     - Xác thực users, lưu metadata                  │
+│     - Quản lý vouchers, user profile                │
+│     - Kiểm soát authorization                       │
 │                                                       │
 │  ⛓️ BLOCK CREATOR NODE (Deltanium-Blocker)          │
-│     - Create blocks, forge transactions             │
+│     - Tạo blocks, forge transactions                │
 │     - Collect transaction fees                      │
 │     - Maintain blockchain                           │
 │                                                       │
 │  💾 STORAGE NODE (Deltanium-Store)                  │
-│     - Store encrypted files and blocks              │
+│     - Lưu trữ encrypted files, blocks               │
 │     - Serve file retrieval                          │
 │     - Charge for storage/bandwidth                  │
 │                                                       │

@@ -104,7 +104,8 @@ dev_dependencies:
   
   # Code generation
   build_runner: ^2.4.6
-  hive_generator: ^2.0.1
+  # hive_generator ^2.0.1 is incompatible with Flutter 3.47 / current analyzer;
+  # not used in this app (no @HiveType models). Re-add via hive_ce_generator if needed.
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

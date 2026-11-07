@@ -500,17 +500,15 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         
         AppLogger.log('Found ${storeNodes.length} available store nodes');
         
-        // 2. Select a node to use
-        final selectedNode = _selectNode(storeNodes);
-        AppLogger.log('Selected node: ${selectedNode['endpoint']}');
+        // 2. Select N-of-M nodes
+        final selectedNodes = _selectNodes(storeNodes);
+        final selectedNode = selectedNodes.first;
+        final replicaNodes = selectedNodes.length > 1 ? selectedNodes.sublist(1) : <Map<String, dynamic>>[];
+        AppLogger.log('Selected ${selectedNodes.length} store node(s); primary=${selectedNode['endpoint']}');
         
         // 3. Use the user's public key for authentication instead of node's key
         AppLogger.log('DEBUG: Setting up authentication with user key...');
         AppLogger.log('DEBUG: Using user public key: ${_userPublicKey!.substring(0, 10)}...');
-        
-        // TODO: In production, should get the mnemonic from secure storage
-        // For demo, using test mnemonic - in real app would use stored user mnemonic
-        // const clientMnemonic = "demo_client_key"; 
         
         // 4. Upload media files
         AppLogger.log('DEBUG: Beginning media upload process...');
@@ -522,8 +520,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             final uploadResult = await _uploadMediaToNode(
               media: media,
               node: selectedNode,
-              publicKey: _userPublicKey!, // Use user's public key instead of node's
-              mnemonic: _userMnemonic!, // Use loaded mnemonic
+              replicaNodes: replicaNodes,
+              publicKey: _userPublicKey!,
+              mnemonic: _userMnemonic!,
               onProgress: (message) {
                 setState(() {
                   _loadingMessage = message;
@@ -1202,17 +1201,23 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     }
   }
   
-  // Select a node from available nodes (random selection for now)
+  // Select primary + replica Store nodes (N-of-M).
   Map<String, dynamic> _selectNode(List<Map<String, dynamic>> nodes) {
-    // Simple random selection - could be improved with node health checks, etc.
-    final random = Random();
-    return nodes[random.nextInt(nodes.length)];
+    return _selectNodes(nodes).first;
+  }
+
+  List<Map<String, dynamic>> _selectNodes(List<Map<String, dynamic>> nodes) {
+    if (nodes.isEmpty) return nodes;
+    final shuffled = List<Map<String, dynamic>>.from(nodes)..shuffle(Random());
+    final n = AppConstants.replicationFactor.clamp(1, shuffled.length);
+    return shuffled.take(n).toList();
   }
   
-  // Upload media to a storage node
+  // Upload media to a storage node (and optional N-of-M replicas)
   Future<Map<String, dynamic>> _uploadMediaToNode({
     required Map<String, dynamic> media,
     required Map<String, dynamic> node,
+    List<Map<String, dynamic>>? replicaNodes,
     required String publicKey,
     required String mnemonic,
     Function(String)? onProgress, // Progress callback
@@ -1251,10 +1256,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             fileName: fileName,
             publicKey: publicKey,
             mnemonic: mnemonic,
-            sharedWithUsers: _sharedWithPublicKeys.isNotEmpty ? _sharedWithPublicKeys : null, // Share with selected users
+            sharedWithUsers: _sharedWithPublicKeys.isNotEmpty ? _sharedWithPublicKeys : null,
             selectedNode: node,
-            onProgress: onProgress, // Pass progress callback
-            fileType: 'file', // 🆕 Regular files get type='file' (vs posts get type='post')
+            replicaNodes: replicaNodes,
+            onProgress: onProgress,
+            fileType: 'file',
             shareType: _shareType,
             policyTag: mediaPolicyTag,
             capsuleFor: mediaCapsuleFor,

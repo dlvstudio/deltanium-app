@@ -18,7 +18,7 @@ to reach the end-to-end blockchain flow described in the proposal.
 - Encrypted content upload to Store (raw metadata + blocks).
 - PRE hybrid flow on client (Umbral PRE via FFI).
 - Storage node discovery via Central API.
-- **Social Actions (React/Comment):** The full StorageContract flow has been completed. The app negotiates the fee (`prepare...WithStorageCost`), shows a confirmation popup (`ConfirmStorageCostDialog`), signs the contract, and then the Store automatically submits a `StorageOperation` to the blockchain. This flow replaces calling `submitTx` directly from the App, ensuring the Store is paid and the transaction is authenticated.✅
+- **Social Actions (React/Comment):** Đã hoàn thành tích luồng StorageContract đầy đủ. App thực hiện thương lượng phí (`prepare...WithStorageCost`), hiển thị popup xác nhận (`ConfirmStorageCostDialog`), ký hợp đồng, và sau đó Store tự động submit `StorageOperation` lên blockchain. Luồng này thay thế việc gọi `submitTx` trực tiếp từ App, đảm bảo Store được thanh toán và giao dịch được xác thực.✅
 
 ### Central API (`deltanium-api`)
 - User registration + follow graph.
@@ -31,7 +31,7 @@ to reach the end-to-end blockchain flow described in the proposal.
 - Encrypted file metadata + block upload APIs.
 - Followers feed + PRE capsule fields.
 - Signature verification middleware (for legacy endpoints).
-- **Social query APIs:** `GetReactions`, `RemoveReaction`, `GetComments`, `DeleteComment`, `GetUserPosts` operate based on metadata stored locally at the Store (off-chain, not cross-checked against the blockchain).
+- **Social query APIs:** `GetReactions`, `RemoveReaction`, `GetComments`, `DeleteComment`, `GetUserPosts` hoạt động dựa trên metadata lưu trữ local tại Store (off-chain, không đối chiếu blockchain).
 
 ### Block Creator Node (`deltanium-blocker`)
 - Block creation loop with coordinator slot check.
@@ -40,11 +40,11 @@ to reach the end-to-end blockchain flow described in the proposal.
 - Voucher-based registration with Central API.
 - Direct tx intake from app + mempool persistence (`mempool.json`).
 - Tx signature verification on blocker before mempool accept.
-- **Web API Core architecture:** Fully converted to a standard ASP.NET Core Web API architecture with Controllers, Dependency Injection, and Middleware.
-- **Detailed logging system:** Serilog integrated to write logs to the console and log files (`blocker-YYYYMMDD.log`) with a higher level of detail, including errors and warnings.
-- **Global error handling:** `ExceptionHandlingMiddleware` implemented to catch and log all unhandled exceptions and return a standard JSON error response.
-- **Transaction validation service:** `StorageOperation` validation logic and contract message construction moved into `TransactionValidationService` to separate responsibilities.
-- **Decimal fee support:** `BlockerTxRequest` updated to accept `Fee` as a `string` and `Transaction` to store `Fee` as a `decimal`, along with parse/validation logic in `TxController`.
+- **Kiến trúc Web API Core:** Chuyển đổi hoàn toàn sang kiến trúc ASP.NET Core Web API chuẩn với Controllers, Dependency Injection và Middleware.
+- **Hệ thống Logging chi tiết:** Tích hợp Serilog để ghi log ra console và file log (`blocker-YYYYMMDD.log`) với mức độ chi tiết cao hơn, bao gồm cả lỗi và cảnh báo.
+- **Xử lý lỗi toàn cục:** Triển khai `ExceptionHandlingMiddleware` để bắt và ghi log mọi ngoại lệ chưa được xử lý, trả về phản hồi lỗi JSON tiêu chuẩn.
+- **Dịch vụ xác thực giao dịch:** Di chuyển logic xác thực `StorageOperation` và xây dựng thông điệp hợp đồng vào `TransactionValidationService` để tách biệt trách nhiệm.
+- **Hỗ trợ Fee thập phân:** Cập nhật `BlockerTxRequest` để nhận `Fee` dưới dạng `string` và `Transaction` để lưu `Fee` dưới dạng `decimal`, cùng với logic parse/validation trong `TxController`.
 
 ### Core (`deltanium-core`)
 - Core cryptography + PRE library (native `umbral_pre`).
@@ -53,7 +53,7 @@ to reach the end-to-end blockchain flow described in the proposal.
 ### App tx submission (MVP wiring)
 - App sends signed tx directly to selected Block Creator.
 - **Tx types App actually submits:** `Follow`, `Unfollow` only (via `user_discovery_service.dart` → `BlockchainTxService.submitTx`). Fee as string (F10) ✅
-- **Not sent by App:** `UserRegistration` (registration only calls the Central API, does not send a tx to the Blocker), `CreatePost` (only uploads to the Store → Store sends StorageOperation; there is no separate CreatePost tx with postId/fileId/storageNodeId as in the proposal).
+- **Not sent by App:** `UserRegistration` (registration chỉ gọi Central API, không gửi tx lên Blocker), `CreatePost` (chỉ upload lên Store → Store gửi StorageOperation; không có tx CreatePost riêng với postId/fileId/storageNodeId như trong proposal).
 
 ### Store tx submission (Current)
 - **Contract Negotiation:**
@@ -66,36 +66,36 @@ to reach the end-to-end blockchain flow described in the proposal.
   - Store submits a single `StorageOperation` tx (containing the fully signed StorageContract) to the selected Block Creator.
   - The Block Creator validates both signatures (App and Store) on the contract before inclusion.
   - App does **not** call `SubmitBlockchainTransactionAsync` or `/api/tx/submit` directly.
-- **Accurate TotalFee formatting:** A bug in `BlockchainService.cs` was fixed to ensure `totalFee` and `fee` in the transaction body are formatted exactly as an "F10" string (`0.0000000000`) using `CultureInfo.InvariantCulture`, resolving signature and deserialization issues.
-- **React/Comment support:** `FileController` in the Store was extended to accept and submit blockchain transactions for "react" and "comment" file types via `StorageOperation`.✅
+- **Định dạng TotalFee chuẩn xác:** Đã sửa lỗi trong `BlockchainService.cs` để đảm bảo `totalFee` và `fee` trong transaction body được định dạng chính xác thành chuỗi "F10" (`0.0000000000`) bằng `CultureInfo.InvariantCulture`, giải quyết vấn đề chữ ký và deserialization.
+- **Hỗ trợ React/Comment:** Đã mở rộng `FileController` trong Store để chấp nhận và submit blockchain cho các loại file "react" và "comment" thông qua `StorageOperation`.✅
 
 ## ✅ Bugs Fixed
 ### Bug 1: Fee type mismatch (App ↔ Blocker)
 - **Status:** Resolved ✅
-- **Fix:** Updated `blockchain_tx_service.dart` to send `fee` as a `string`.
+- **Fix:** Cập nhật `blockchain_tx_service.dart` gửi `fee` là `string`.
 
-### Bug 2: Comment (public) missing `submitTx` call
+### Bug 2: Comment (public) thiếu gọi `submitTx`
 - **Status:** Resolved ✅
-- **Fix:** (Replaced by the unified StorageContract flow; Store submits the tx itself).
+- **Fix:** (Đã thay thế bằng luồng StorageContract đồng nhất, Store tự submit tx).
 
 ### Bug 3: Store Filter Skip React/Comment
 - **Status:** Resolved ✅
-- **Fix:** Removed the `type == 'post'` filter in `FileController.TrySubmitStorageContractAsync`, allowing StorageOperation submission for both React and Comment.
+- **Fix:** Loại bỏ filter `type == 'post'` trong `FileController.TrySubmitStorageContractAsync`, cho phép submit StorageOperation cho cả React và Comment.
 
-### Bug 4 (resolved): Block slot authorization mock
-- **Before:** `CentralCoordinatorClient` used a mock (did not call the Central API) and returned a fake `central-signed(auth:...)`.
-- **Current:** The Blocker calls the real `POST /api/blockcreatornode/block-slot`; Central randomly selects one blocker from the active list, signs the payload (SHA256 of the message), and returns the signature + centralPublicKey. The Blocker verifies the signature with the trusted Central pubkey and only creates a block when `granted == true`.
+### Bug 4 (đã xử lý): Block slot authorization mock
+- **Trước:** `CentralCoordinatorClient` dùng mock (không gọi Central API), trả về `central-signed(auth:...)` giả.
+- **Hiện tại:** Blocker gọi thật `POST /api/blockcreatornode/block-slot`; Central chọn ngẫu nhiên một blocker từ danh sách active, ký payload (SHA256 của message), trả về signature + centralPublicKey. Blocker verify chữ ký với trusted Central pubkey và chỉ tạo block khi `granted == true`.
 
-### Current flow (detailed trace)
+### Luồng hiện tại (truy vết chi tiết)
 ```
 Follow/Unfollow (App → Blocker):
 1. App: UserDiscoveryService.followUser() / unfollowUser()
-   ├─ POST /api/user/follow or /api/user/unfollow → Central API ✅
+   ├─ POST /api/user/follow hoặc /api/user/unfollow → Central API ✅
    └─ BlockchainTxService.submitTx(type: 'Follow'|'Unfollow', fee: 1) → Blocker ✅
        └─ Blocker: TxController → Decision → Verify signature → mempool → block
 
 Post / React / Comment / Chat (Store → Blocker, StorageOperation):
-1. App uploads metadata + blocks to Store; App signs the contract, Store co-signs.
+1. App upload metadata + blocks lên Store; App ký contract, Store co-sign.
 2. Store: FileController.TrySubmitStorageContractAsync() → BlockchainService.SubmitStorageOperationAsync()
    ├─ fee = contract.TotalFee.ToString("F10") ✅
    ├─ POST /api/tx/submit → Blocker
@@ -103,42 +103,42 @@ Post / React / Comment / Chat (Store → Blocker, StorageOperation):
    └─ NodeHost.RunBlockCreationLoop() → RequestBlockSlot (Central) → BuildBlock → Validate → AddBlock → blocks.json ✅
 ```
 
-## Blockchain Migration Roadmap Assessment (Review)
+## Đánh giá lộ trình chuyển đổi Blockchain (Rà soát)
 
-**Conclusion:** The roadmap has completed the **MVP/prototype** for the main flow (storage contract → block). The full conversion to a blockchain system whose state comes from the chain is **not complete**; indexer, P2P, real consensus, and D-Coin economics are still missing.
+**Kết luận:** Lộ trình đã hoàn thành **MVP/prototype** cho luồng chính (storage contract → block). **Chưa hoàn thành** chuyển đổi đầy đủ thành hệ thống blockchain có state từ chain; còn thiếu indexer, P2P, consensus thật, và kinh tế D-Coin.
 
-### Implemented (per the proposal)
+### Đã triển khai (theo proposal)
 
-| Item | Proposal | Current status |
-|------|----------|----------------|
-| Transaction types (schema) | 2.2.1–2.2.10 | Blocker accepts all 10 types; App only sends Follow/Unfollow; Store sends StorageOperation (post/react/comment/chat). |
+| Hạng mục | Proposal | Hiện trạng |
+|----------|----------|------------|
+| Transaction types (schema) | 2.2.1–2.2.10 | Blocker chấp nhận đủ 10 loại; App chỉ gửi Follow/Unfollow; Store gửi StorageOperation (post/react/comment/chat). |
 | Block structure + Merkle | 2.3 | BlockBuilder + BlockValidator, NodeState (blocks.json). |
-| Central coordination | 2.4 | Central API: decision (tx) + block-slot (signs SHA256), Blocker verifies with Central pubkey. |
-| Storage contract on-chain | 2.2.8, envelope | Store submits StorageOperation with the contract (hash + appSignature + storageNodeSignature + content); Blocker validates the envelope. |
-| Post/React/Comment on-chain | StorageOperation | Post, react, comment, chat_message all go through StorageContract → StorageOperation → blocks. |
-| Follow/Unfollow on-chain | 2.2.2, 2.2.3 | App sends Follow/Unfollow tx after the API succeeds. |
+| Central coordination | 2.4 | Central API: decision (tx) + block-slot (ký SHA256), Blocker verify với Central pubkey. |
+| Storage contract on-chain | 2.2.8, envelope | Store submit StorageOperation với contract (hash + appSignature + storageNodeSignature + content); Blocker validate envelope. |
+| Post/React/Comment on-chain | StorageOperation | Post, react, comment, chat_message đều qua StorageContract → StorageOperation → blocks. |
+| Follow/Unfollow on-chain | 2.2.2, 2.2.3 | App gửi Follow/Unfollow tx sau khi API thành công. |
 | Node registry (Block Creator) | 2.2.7, 2.7.2 | Central: blockcreator_nodes.json, voucher, decision + block-slot. |
-| Content Store (Store node) | 2.7.3 | Store: encrypted upload, StorageOperation with contract. |
+| Content Store (Store node) | 2.7.3 | Store: upload encrypted, StorageOperation với contract. |
 
-### Not implemented / Differences from the proposal
+### Chưa triển khai / Khác biệt so với proposal
 
-| Item | Notes |
-|------|-------|
-| **UserRegistration tx** | Proposal: user_registration tx on-chain. Current: App only calls `/api/user/register`; does not send a UserRegistration tx to the Blocker. |
-| **CreatePost tx** | Proposal: create_post tx with postId, fileId, storageNodeId. Current: only StorageOperation (sent by Store) containing the contract + fileId; no separate CreatePost tx from the App. |
-| **State from the blockchain** | Proposal: global state (user registry, follow, post refs) from the chain. Current: API/Store remain the source of truth (users.json, user_follows.json, local metadata); **there is no indexer** that rebuilds state from blocks. |
-| **Persistence** | All services use JSON (users, blocks, mempool). Not yet migrated to a DB. |
-| **P2P / Gossip** | Not present; HTTP via Central only. |
-| **Consensus** | Central selects a blocker **at random**; no deterministic PoA/PoS or round-robin yet. |
-| **Inspector / Router nodes** | Proposal has 5 node types; only Block Creator + Content Store (Store) are in use; Inspector and Router do not exist yet. |
-| **D-Coin, Transfer, Donate** | Schema exists; no balance state, reward distribution, or wallet yet. |
+| Hạng mục | Ghi chú |
+|----------|--------|
+| **UserRegistration tx** | Proposal: user_registration tx on-chain. Hiện tại: App chỉ gọi API `/api/user/register`; không gửi UserRegistration tx lên Blocker. |
+| **CreatePost tx** | Proposal: create_post tx với postId, fileId, storageNodeId. Hiện tại: chỉ có StorageOperation (Store gửi) chứa contract + fileId; không có tx CreatePost riêng từ App. |
+| **State từ blockchain** | Proposal: global state (user registry, follow, post refs) từ chain. Hiện tại: API/Store vẫn là source of truth (users.json, user_follows.json, metadata local); **không có indexer** rebuild state từ blocks. |
+| **Persistence** | Tất cả service dùng JSON (users, blocks, mempool). Chưa chuyển sang DB. |
+| **P2P / Gossip** | Chưa có; chỉ HTTP qua Central. |
+| **Consensus** | Central chọn blocker **ngẫu nhiên**; chưa PoA/PoS hoặc round-robin xác định. |
+| **Inspector / Router nodes** | Proposal có 5 loại node; chỉ Block Creator + Content Store (Store) đang dùng; Inspector, Router chưa có. |
+| **D-Coin, Transfer, Donate** | Schema có; chưa có balance state, reward distribution, hay ví. |
 
-### Summary: Remaining work
+### Tóm tắt: Còn thiếu cần làm
 
-1. **Phase 1 (Ground truth):** Blockchain Indexer rebuilds state from blocks; replace JSON with a DB; semantic validation (user is registered, postFileId exists...).
-2. **Phase 2 (Network):** P2P gossip (tx + block propagation); deterministic consensus (PoA/round-robin); node discovery.
-3. **Phase 3 (Economy & security):** D-Coin, fee distribution, Transfer/Donate; secure wallet; audit PRE/signing.
-4. **Optional:** App sends a UserRegistration tx after API registration; sends a CreatePost tx (reference) after the Store has received the file — so the chain has a complete audit trail per the proposal.
+1. **Phase 1 (Ground truth):** Blockchain Indexer rebuild state từ blocks; thay JSON bằng DB; semantic validation (user đã đăng ký, postFileId tồn tại...).
+2. **Phase 2 (Mạng):** P2P gossip (tx + block propagation); consensus xác định (PoA/round-robin); node discovery.
+3. **Phase 3 (Kinh tế & bảo mật):** D-Coin, fee distribution, Transfer/Donate; secure wallet; audit PRE/signing.
+4. **Tùy chọn:** App gửi UserRegistration tx sau khi đăng ký API; gửi CreatePost tx (reference) sau khi Store đã nhận file — để chain có đầy đủ audit trail theo proposal.
 
 ---
 
@@ -241,21 +241,21 @@ When Store submits a `StorageOperation` to the Blocker, the contract is sent in 
 - **Tx types:** All proposal types accepted (UserRegistration → Donate).
 
 ## How Central API selects a blocker
-- **Data source:** Central API gets the list of **active** block creator nodes from storage (`GetActiveBlockCreatorNodesAsync()`).
-- **Decision (receive tx):** `POST /api/blockcreatornode/decision` — randomly selects **one** blocker: `selected = nodes[new Random().Next(nodes.Count)]`; `selected == true` only when `request.BlockerPubKey` matches `selected.PublicKey`. Each request selects again at random.
-- **Block-slot (create block):** `POST /api/blockcreatornode/block-slot` — same mechanism: randomly select one node from the active list; `granted == true` only when `request.BlockerPubKey` matches the chosen node. The Blocker only creates a block when it receives `granted == true` and signature verification succeeds.
-- **Future:** Random selection can be replaced with consensus (for example PoA / round-robin) — see Phase 2 in the Roadmap.
+- **Data source:** Central API lấy danh sách **active** block creator nodes từ storage (`GetActiveBlockCreatorNodesAsync()`).
+- **Decision (nhận tx):** `POST /api/blockcreatornode/decision` — chọn **một** blocker ngẫu nhiên: `selected = nodes[new Random().Next(nodes.Count)]`; `selected == true` chỉ khi `request.BlockerPubKey` trùng `selected.PublicKey`. Mỗi request chọn lại ngẫu nhiên.
+- **Block-slot (tạo block):** `POST /api/blockcreatornode/block-slot` — cùng cơ chế: chọn một node ngẫu nhiên từ danh sách active; `granted == true` chỉ khi `request.BlockerPubKey` trùng node được chọn. Blocker chỉ tạo block khi nhận được `granted == true` và verify chữ ký thành công.
+- **Tương lai:** Có thể thay random bằng consensus (ví dụ PoA / round-robin) — xem Phase 2 trong Roadmap.
 
 ## Decision Format (Selection Signature)
 - **Payload:** `txId`, `blockerPubKey`, `selected`, `issuedAt`, `expiresAt`, `nonce`
 - **Message (plain text):** `DECISION|txId|blockerPubKey|selected|issuedAt|expiresAt|nonce`
-- **Signing:** Central API **signs the hash** (SHA256 of the message), not the raw message. `KeyService.SignDecision(message)` → SHA256(message) → ECDSA sign hash → Base64(DER). The Blocker verifies by hashing the message again and verifying the signature against that hash (`SignatureVerifier.Verify`).
-- **Verify:** time window valid, `selected == true`, pubkey matches, signature valid. **Blocker must** store the Central API public key (`CENTRAL_API_PUBLIC_KEY` env, or `node_info.json` / fetch from `GET /api/blockcreatornode/decision-key`) and verify the decision with that trusted key.
+- **Signing:** Central API **ký vào hash** (SHA256 của message), không ký raw message. `KeyService.SignDecision(message)` → SHA256(message) → ECDSA sign hash → Base64(DER). Blocker verify bằng cách hash lại message và verify chữ ký với hash đó (`SignatureVerifier.Verify`).
+- **Verify:** time window valid, `selected == true`, pubkey matches, signature valid. **Blocker must** lưu Central API public key (`CENTRAL_API_PUBLIC_KEY` env, hoặc `node_info.json` / fetch từ `GET /api/blockcreatornode/decision-key`) và verify decision bằng trusted key đó.
 
 ## Block-slot and block signatures
-- **Block slot:** The Blocker calls `POST /api/blockcreatornode/block-slot` with `blockerPubKey`. Central signs the message `BLOCK_SLOT|blockerPubKey|issuedAt|expiresAt|nonce|granted` (signs the SHA256 of the message, same as decision). The Blocker verifies the signature with the trusted Central pubkey and only creates a block when `granted == true`.
-- **Block:** Each block includes: `CentralAuthorizationSignature` (Central signature from the block-slot response), `CentralApiPublicKey` (the Central pubkey that signed the slot, stored in the block to record who authorized it), `CreatorSignature` (Blocker ECDSA-signs the block id = SHA256(`previousId:height:timestamp:merkleRoot:creatorPublicKey`)), and `Version` (block format version, for example `"1.0.0"`, read from Blocker config `BlockVersion` in appsettings). BlockValidator verifies CreatorSignature with CreatorPublicKey.
-- **Blocker config:** Central API URL is stored in `appsettings.json` (`CentralApiUrl`, for example `http://localhost:5002`) or env `CENTRAL_API_URL`. Central API public key is stored in `node_info.json` (`CentralApiPublicKey`) or env `CENTRAL_API_PUBLIC_KEY`. Block version is in appsettings `BlockVersion` (for example `"1.0.0"`).
+- **Block slot:** Blocker gọi `POST /api/blockcreatornode/block-slot` với `blockerPubKey`. Central ký message `BLOCK_SLOT|blockerPubKey|issuedAt|expiresAt|nonce|granted` (ký SHA256 của message, cùng cách decision). Blocker verify chữ ký với trusted Central pubkey và chỉ tạo block khi `granted == true`.
+- **Block:** Mỗi block gồm: `CentralAuthorizationSignature` (chữ ký Central từ block-slot response), `CentralApiPublicKey` (pubkey Central đã ký slot, lưu trong block để biết ai ủy quyền), `CreatorSignature` (Blocker ký ECDSA lên block id = SHA256(`previousId:height:timestamp:merkleRoot:creatorPublicKey`)), và `Version` (phiên bản block format, ví dụ `"1.0.0"`, đọc từ Blocker config `BlockVersion` trong appsettings). BlockValidator verify CreatorSignature với CreatorPublicKey.
+- **Blocker config:** Central API URL lưu trong `appsettings.json` (`CentralApiUrl`, ví dụ `http://localhost:5002`) hoặc env `CENTRAL_API_URL`. Central API public key lưu trong `node_info.json` (`CentralApiPublicKey`) hoặc env `CENTRAL_API_PUBLIC_KEY`. Block version trong appsettings `BlockVersion` (ví dụ `"1.0.0"`).
 
 ## Optional Enhancements
 - Real cryptographic signing + validation in all layers.
@@ -283,12 +283,12 @@ When Store submits a `StorageOperation` to the Blocker, the contract is sent in 
 
 ## Review: App ↔ Store ↔ Blocker Flow (Current vs Plan)
 ### Log file locations
-The new log files are in the following folders (per service):
+Các file log mới cùng nằm trong các folder sau (theo từng service):
 - **App:** `deltanium-app/appLogs/app-YYYYMMDD.log`
 - **Store:** `deltanium-store/logs/store-YYYYMMDD.log`
-- **Blocker:** `deltanium-blocker/logs/blockerYYYYMMDD.log` (or `blocker-YYYYMMDD.log`)
+- **Blocker:** `deltanium-blocker/logs/blockerYYYYMMDD.log` (hoặc `blocker-YYYYMMDD.log`)
 
-When tracing errors (for example a block not created, StorageOperation, contract signing), open the matching date in each corresponding folder.
+Khi truy vết lỗi (ví dụ block chưa tạo, StorageOperation, contract signing) mở đúng ngày trong từng folder tương ứng.
 ### Observations (What Works Now)
 - App → Store upload flow works end-to-end (metadata + blocks).
 - Store submits `StorageOperation` to Blocker with `totalFee` formatted as F10 string.
@@ -324,20 +324,19 @@ When tracing errors (for example a block not created, StorageOperation, contract
 
 ## Proposed Roadmap for Full Blockchain Social Network
 
-### Phase 0: Bug Fixes & Architecture Alignment ✅ Completed
-1. Fix fee type mismatch in `BlockchainTxService` (App → Blocker). ✅
-2. Integrate the StorageContract flow for React/Comment (App ↔ Store). ✅
-3. Add a fee confirmation popup for the React/Comment UI. ✅
-4. Verify React/Comment via `StorageOperation` appear in `blocks.json`. ✅
-5. Current flow: Follow/Unfollow (App → Blocker); Post/React/Comment/Chat (Store → Blocker via StorageOperation). ✅
+### Phase 0: Bug Fixes & Architecture Alignment ✅ Hoàn thành
+1. Fix fee type mismatch trong `BlockchainTxService` (App → Blocker). ✅
+2. Tích hợp luồng StorageContract cho React/Comment (App ↔ Store). ✅
+3. Thêm fee confirmation popup cho React/Comment UI. ✅
+4. Verify React/Comment thông qua `StorageOperation` xuất hiện trong `blocks.json`. ✅
+5. Luồng hiện tại: Follow/Unfollow (App → Blocker); Post/React/Comment/Chat (Store → Blocker qua StorageOperation). ✅
 
 ### Phase 1: State Reconciliation (Ground Truth)
-1. **Blockchain Indexer/Reducer:** A service that scans new blocks and applies transactions to a local database.
-2. **Deep Validation:** The Blocker checks semantics (postFileId exists, user is registered...).
+1. **Blockchain Indexer/Reducer:** Service quét blocks mới và apply transaction vào database local.
+2. **Deep Validation:** Blocker kiểm tra semantic (postFileId tồn tại, user đã đăng ký...).
 
 ### Phase 2: Decentralized Network
-1. **P2P Gossip:** Propagation of transactions and blocks among Blockers.
-2. **Multi-Blocker Consensus:** Move from random selection to PoA (Proof of Authority).
-### Phase 3: Incentive & Economy
-1. **D-Coin Integration:** Connect `Transfer` and `Donate` transactions.
-2. **Fee Distribution:** Reward transaction fees to Blockers and storage fees to Store nodes.
+1. **P2P Gossip:** Propagation cho transactions và blocks giữa các Blockers.
+2. **Multi-Blocker Consensus:** Chuyển từ random sang PoA (Proof of Authority).### Phase 3: Incentive & Economy
+1. **D-Coin Integration:** Kết nối `Transfer` và `Donate` transactions.
+2. **Fee Distribution:** Thưởng phí transaction cho Blockers và phí lưu trữ cho Store nodes.

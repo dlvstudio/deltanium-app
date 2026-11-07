@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
+import 'package:crypto/crypto.dart';
 import 'package:deltanium_app/config/constants.dart';
 import 'package:deltanium_app/services/crypto_service.dart';
 import 'package:deltanium_app/services/file_crypto_service.dart';
@@ -27,6 +28,8 @@ class FileUploadService {
     required String mnemonic,
     List<String>? sharedWithUsers,
     required Map<String, dynamic> selectedNode,
+    /// Extra Store nodes for N-of-M (same ciphertext / same fileId).
+    List<Map<String, dynamic>>? replicaNodes,
     Function(String)? onProgress, // Progress callback
     String? fileType, // 🆕 File type ('file', 'post', etc.)
     String? shareType, // 🆕 Share type: 'public', 'shared', 'following'
@@ -135,166 +138,114 @@ class FileUploadService {
       AppLogger.log('🔍 DEBUG: Owner entry: $ownerEntry');
       AppLogger.log('🔍 DEBUG: Using fileId for content blocks: $fileId');
       AppLogger.log('🔍 DEBUG: Owner encryptedKey type: ${encryptedKeyValue.runtimeType}, length: ${encryptedKey.length}');
-      final String? nodeEndpointValue = selectedNode['endpoint'] as String?;
-      if (nodeEndpointValue == null || nodeEndpointValue.isEmpty) {
-        throw Exception('nodeEndpoint is missing in selectedNode');
-      }
-      final String nodeEndpoint = nodeEndpointValue;
       final String? fileHash = null; // Không còn merkleRoot public
-      
-      // Step 3: Upload metadata entries for each user
-      onProgress?.call('Uploading metadata entries...');
-      await Future.delayed(const Duration(milliseconds: 10));
-      
-      AppLogger.log('Uploading ${metadataEntries.length} metadata entries for zero-knowledge sharing');
+
+      // N-of-M target nodes (primary + replicas), deduped by id
+      final List<Map<String, dynamic>> targetNodes = [selectedNode];
+      if (replicaNodes != null) {
+        for (final n in replicaNodes) {
+          final id = n['id']?.toString() ?? n['Id']?.toString() ?? '';
+          final already = targetNodes.any((t) => (t['id']?.toString() ?? t['Id']?.toString() ?? '') == id);
+          if (id.isNotEmpty && !already) targetNodes.add(n);
+        }
+      }
+      final factor = AppConstants.replicationFactor;
+      while (targetNodes.length > factor && targetNodes.length > 1) {
+        targetNodes.removeLast();
+      }
 
       var blockchainSubmitted = true;
       final List<String> blockchainSubmitErrors = [];
-      
-      // 🆕 DEBUG: Log recipientPubKeys to verify all entries are created
-      for (int i = 0; i < metadataEntries.length; i++) {
-        final entry = metadataEntries[i] as Map<String, dynamic>;
-        final recipientKey = entry['recipientPubKey'] as String? ?? 'N/A';
-        AppLogger.log('FileUploadService: Metadata entry ${i + 1}/${metadataEntries.length} - fileId=${entry['fileId']}, recipientPubKey=${recipientKey.substring(0, recipientKey.length > 10 ? 10 : recipientKey.length)}...');
-      }
-      
-      for (int i = 0; i < metadataEntries.length; i++) {
-        final metadataEntry = metadataEntries[i] as Map<String, dynamic>;
-        
-        // 🆕 FIX: Add ParentFileId to metadata entries if provided (for comment media)
-        if (parentFileId != null && parentFileId.isNotEmpty) {
-          metadataEntry['parentFileId'] = parentFileId;
-          AppLogger.log('FileUploadService: Added ParentFileId=$parentFileId to metadata entry ${i + 1}');
-        }
-        
-        // 🆕 Pass ContractId to metadata if available
-        if (contractId != null && contractId.isNotEmpty) {
-          metadataEntry['contractId'] = contractId;
-          AppLogger.log('FileUploadService: Added ContractId=$contractId to metadata entry ${i + 1}');
-        }
-        
-        final metadataJson = json.encode(metadataEntry);
-        
-        AppLogger.log('Uploading metadata entry ${i + 1}/${metadataEntries.length}');
-        
-        final metadataResult = await _uploadContent(
-          nodeEndpoint: nodeEndpoint,
-          path: '/api/file/upload-metadata-raw',
-          content: Uint8List.fromList(utf8.encode(metadataJson)),
-          fileName: '${metadataEntry['firstBlockId']}_metadata.json',
-          contentType: 'application/json',
-          publicKey: publicKey,
-          mnemonic: mnemonic,
-        );
-        
-        if (metadataResult['success'] != true) {
-          throw Exception('Failed to upload metadata entry ${i + 1}: ${metadataResult['error']}');
-        }
+      final List<String> placedNodeIds = [];
 
-        final response = metadataResult['response'];
-        if (response is Map && response['BlockchainSubmitted'] == false) {
-          blockchainSubmitted = false;
-          final error = response['BlockchainSubmitError'];
-          if (error is String && error.isNotEmpty) {
-            blockchainSubmitErrors.add(error);
+      for (var ni = 0; ni < targetNodes.length; ni++) {
+        final node = targetNodes[ni];
+        final String? nodeEndpointValue = (node['endpoint'] ?? node['Endpoint']) as String?;
+        if (nodeEndpointValue == null || nodeEndpointValue.isEmpty) {
+          throw Exception('nodeEndpoint is missing in selectedNode');
+        }
+        final String nodeEndpoint = nodeEndpointValue;
+        onProgress?.call('Uploading to store ${ni + 1}/${targetNodes.length}...');
+
+        for (int i = 0; i < metadataEntries.length; i++) {
+          final metadataEntry = Map<String, dynamic>.from(metadataEntries[i] as Map);
+          if (parentFileId != null && parentFileId.isNotEmpty) {
+            metadataEntry['parentFileId'] = parentFileId;
+          }
+          if (contractId != null && contractId.isNotEmpty) {
+            metadataEntry['contractId'] = contractId;
+          }
+          final metadataJson = json.encode(metadataEntry);
+          final metadataResult = await _uploadContent(
+            nodeEndpoint: nodeEndpoint,
+            path: '/api/file/upload-metadata-raw',
+            content: Uint8List.fromList(utf8.encode(metadataJson)),
+            fileName: '${metadataEntry['firstBlockId']}_metadata.json',
+            contentType: 'application/json',
+            publicKey: publicKey,
+            mnemonic: mnemonic,
+          );
+          if (metadataResult['success'] != true) {
+            throw Exception('Failed to upload metadata entry ${i + 1} to node ${ni + 1}: ${metadataResult['error']}');
+          }
+          final response = metadataResult['response'];
+          if (response is Map && response['BlockchainSubmitted'] == false) {
+            blockchainSubmitted = false;
+            final error = response['BlockchainSubmitError'];
+            if (error is String && error.isNotEmpty) blockchainSubmitErrors.add(error);
           }
         }
-      }
-      
-      AppLogger.log('All metadata entries uploaded successfully');
-      
-      // Debug: Separate metadata and content blocks for clarity
-      final metadataBlocks = blocks.where((block) => block['isMetadataBlock'] == true).toList();
-      final contentBlocks = blocks.where((block) => block['isMetadataBlock'] != true).toList();
-      AppLogger.log('🔍 DEBUG: Separated ${metadataBlocks.length} metadata blocks, ${contentBlocks.length} content blocks');
-      
-      // Debug: Show block structure
-      for (int i = 0; i < blocks.length; i++) {
-        final block = blocks[i];
-        AppLogger.log('🔍 DEBUG: Block $i - blockId: ${block['blockId']}, blockIndex: ${block['blockIndex']}, isMetadata: ${block['isMetadataBlock']}');
-      }
-      
-      // Step 4: Upload each encrypted block with progress
-      AppLogger.log('Uploading ${blocks.length} encrypted blocks...');
-      
-      for (int i = 0; i < blocks.length; i++) {
-        final block = blocks[i] as Map<String, dynamic>;
-        final blockId = block['blockId'] as String;
-        final blockIndex = block['blockIndex'] as int;
-        final encryptedContent = block['encryptedContent'] as Uint8List;
-        final isMetadataBlock = block['isMetadataBlock'] == true;
-        
-        // Tìm fileId cho block này
-        String fileIdForBlock;
-        if (isMetadataBlock) {
-          // Metadata block: tìm metadata entry có firstBlockId = blockId
-          final correspondingMetadata = metadataEntries.firstWhere(
-            (entry) => entry['firstBlockId'] == blockId,
-            orElse: () => throw Exception('No metadata found for block $blockId'),
+
+        for (int i = 0; i < blocks.length; i++) {
+          final block = blocks[i] as Map<String, dynamic>;
+          final blockId = block['blockId'] as String;
+          final blockIndex = block['blockIndex'] as int;
+          final encryptedContent = block['encryptedContent'] as Uint8List;
+          final isMetadataBlock = block['isMetadataBlock'] == true;
+          String fileIdForBlock;
+          if (isMetadataBlock) {
+            final correspondingMetadata = metadataEntries.firstWhere(
+              (entry) => entry['firstBlockId'] == blockId,
+              orElse: () => throw Exception('No metadata found for block $blockId'),
+            );
+            fileIdForBlock = correspondingMetadata['fileId'] as String;
+          } else {
+            fileIdForBlock = fileId;
+          }
+          final blockResult = await _uploadContent(
+            nodeEndpoint: nodeEndpoint,
+            path: '/api/file/upload-file-block-raw',
+            content: encryptedContent,
+            fileName: blockId,
+            contentType: 'application/octet-stream',
+            publicKey: publicKey,
+            mnemonic: mnemonic,
+            extraHeaders: {
+              'X-Block-Id': blockId,
+              'X-File-Id': fileIdForBlock,
+              'X-Block-Index': blockIndex.toString(),
+              if (contractId != null) 'X-Contract-Id': contractId,
+            },
           );
-          fileIdForBlock = correspondingMetadata['fileId'] as String;
-          AppLogger.log('🔍 DEBUG: Metadata block - blockId: $blockId, fileIdForBlock: $fileIdForBlock');
-          AppLogger.log('🔍 DEBUG: correspondingMetadata: $correspondingMetadata');
-        } else {
-          // Content block: sử dụng fileId của owner
-          fileIdForBlock = fileId;
-          AppLogger.log('🔍 DEBUG: Content block - blockId: $blockId, fileIdForBlock: $fileIdForBlock');
+          if (blockResult['success'] != true) {
+            throw Exception('Failed to upload file block $blockIndex to node ${ni + 1}: ${blockResult['error']}');
+          }
         }
-        
-        // Update progress
-        final progressPercent = ((i / blocks.length) * 100).round();
-        onProgress?.call('Uploading block ${i + 1}/${blocks.length} ($progressPercent%)...');
-        await Future.delayed(const Duration(milliseconds: 50));
-        
-        // Simple logging for all files (no special handling for small files)
-        if (encryptedContent.isNotEmpty) {
-          final preview = encryptedContent.sublist(0, min(16, encryptedContent.length));
-          AppLogger.log('Block $blockIndex encrypted preview: ${preview.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
-        }
-        
-        AppLogger.log('Uploading block $blockIndex of ${blocks.length} (size: ${encryptedContent.length} bytes)');
-        
-        final blockResult = await _uploadContent(
-          nodeEndpoint: nodeEndpoint,
-          path: '/api/file/upload-file-block-raw',
-          content: encryptedContent,
-          fileName: blockId,
-          contentType: 'application/octet-stream',
+
+        final String? nodeId = (node['id'] ?? node['Id'])?.toString();
+        if (nodeId != null && nodeId.isNotEmpty) placedNodeIds.add(nodeId);
+      }
+
+      onProgress?.call('Finalizing...');
+      if (placedNodeIds.isNotEmpty) {
+        await _registerReplicasWithAPI(
+          fileId: fileId,
           publicKey: publicKey,
           mnemonic: mnemonic,
-          extraHeaders: {
-            'X-Block-Id': blockId,
-            'X-File-Id': fileIdForBlock,
-            'X-Block-Index': blockIndex.toString(),
-            if (contractId != null) 'X-Contract-Id': contractId, // 🆕 Pass ContractId in header
-          },
-        );
-        
-        if (blockResult['success'] != true) {
-          throw Exception('Failed to upload file block $blockIndex: ${blockResult['error']}');
-        }
-      }
-      
-      AppLogger.log('All file blocks uploaded successfully');
-      
-      // Step 5: Register the file with the central API
-      onProgress?.call('Finalizing...');
-      await Future.delayed(const Duration(milliseconds: 10));
-      
-      // Register file with central API (nodeId is optional, can be extracted from endpoint if needed)
-      final String? nodeId = selectedNode['id'] as String?;
-      if (nodeId != null && nodeId.isNotEmpty) {
-        await _registerFileWithAPI(
-          fileId: fileId,
-          fileName: fileName,
-          fileType: ownerEntry['type'] as String? ?? 'file',
-          nodeId: nodeId,
-          publicKey: publicKey,
+          storeNodeIds: placedNodeIds,
           fileSize: fileData.length,
           fileHash: fileHash ?? '',
         );
-      } else {
-        AppLogger.log('Skipping central API registration: nodeId not provided');
       }
       
       onProgress?.call('Upload completed!');
@@ -320,10 +271,12 @@ class FileUploadService {
         'recipientFileIds': recipientFileIds, // 🆕 Map of recipient -> their fileId
         'fileName': fileName,
         'fileSize': fileData.length,
-        'url': '$nodeEndpoint/api/file/download/$fileId',
+        'url': '${(selectedNode['endpoint'] ?? selectedNode['Endpoint'])}/api/file/download/$fileId',
         'blockCount': blocks.length,
         'sharedWith': sharedWithUsers ?? [],
-        'encryptedKey': encryptedKey, // 🆕 Include encryptedKey in result
+        'encryptedKey': encryptedKey,
+        'storeNodeIds': placedNodeIds,
+        'replicationFactor': placedNodeIds.length,
         'blockchainSubmitted': blockchainSubmitted,
         'blockchainSubmitErrors': blockchainSubmitErrors,
       };
@@ -539,46 +492,54 @@ class FileUploadService {
     }
   }
   
-  /// Register the file with the central API
-  Future<void> _registerFileWithAPI({
+  /// Register N-of-M placements with Central (signed).
+  Future<void> _registerReplicasWithAPI({
     required String fileId,
-    required String fileName,
-    required String fileType,
-    required String nodeId,
     required String publicKey,
+    required String mnemonic,
+    required List<String> storeNodeIds,
     required int fileSize,
-    required String fileHash, // Now correctly required
+    required String fileHash,
   }) async {
     try {
-      final storedFileData = {
+      final bodyMap = {
         'fileId': fileId,
         'ownerPublicKey': publicKey,
-        'storeNodeId': nodeId,
-        'fileName': fileName,
-        'fileType': fileType,
+        'storeNodeIds': storeNodeIds,
         'fileSize': fileSize,
-        'fileHash': fileHash, // Now correctly included
-        'createdAt': DateTime.now().toIso8601String(),
+        'fileHash': fileHash,
       };
-      
-      AppLogger.log('Registering file with API: $fileId');
-      AppLogger.log('Registration data: ${json.encode(storedFileData)}');
-      
+      final body = json.encode(bodyMap);
+      final path = '/api/storedfile/register-replicas';
+      // apiBaseUrl already includes /api — strip for path used in signature
+      final pathForSigning = path;
+      final timestamp = DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000;
+      final bodyHash = sha256.convert(utf8.encode(body)).bytes
+          .map((b) => b.toRadixString(16).padLeft(2, '0'))
+          .join();
+      final dataToSign = 'POST$pathForSigning$timestamp$bodyHash';
+      final signature = await CryptoService.sign(dataToSign, mnemonic);
+      final compressedPk = CryptoService.convertToCompressedPublicKey(publicKey);
+
+      AppLogger.log('Registering replicas with API: $fileId nodes=$storeNodeIds');
       final response = await http.post(
-        Uri.parse('$apiBaseUrl/storedfile/register'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode(storedFileData),
+        Uri.parse('$apiBaseUrl/storedfile/register-replicas'),
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-PubKey': compressedPk,
+          'X-Timestamp': timestamp.toString(),
+          'X-Signature': signature,
+        },
+        body: body,
       );
-      
+
       if (response.statusCode != 200) {
-        AppLogger.log('Warning: Failed to register file with API: ${response.statusCode}');
-        AppLogger.log('Response body: ${response.body}');
+        AppLogger.log('Warning: Failed to register replicas: ${response.statusCode} ${response.body}');
       } else {
-        AppLogger.log('File registered successfully with the API');
+        AppLogger.log('Replicas registered: ${response.body}');
       }
     } catch (e) {
-      AppLogger.log('Warning: Error registering file: $e');
-      // Non-fatal error - file is already on the store node
+      AppLogger.log('Warning: Error registering replicas: $e');
     }
   }
   

@@ -1,12 +1,12 @@
 # Post Upload with Storage Cost Confirmation - Integration Guide
 
 ## Overview
-When a user creates/uploads a post, the app will:
-1. Calculate the file size
-2. Call the Store API to get the storage price (calculated by the Storage Node)
-3. Show a fee confirmation dialog to the user
-4. If the user confirms → sign the contract + upload
-5. If the user cancels → stop
+Khi user tạo/upload post, app sẽ:
+1. Tính toán file size
+2. Gọi Store API để lấy giá storage (Storage Node tính)
+3. Show dialog confirm fee cho user
+4. Nếu user confirm → sign contract + upload
+5. Nếu user cancel → dừng
 
 ## Usage Example
 
@@ -294,3 +294,4 @@ The `ConfirmStorageCostDialog` shows:
 - [ ] Transaction history showing storage charges
 - [ ] Contract extension/renewal UI
 - [ ] Cost estimation with different file sizes
+

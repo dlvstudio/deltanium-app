@@ -1,112 +1,112 @@
-# Proposal: Migrating Deltanium to a Blockchain
+# Đề Xuất Chuyển Đổi Deltanium Thành Blockchain
 
-## 1. Review of Current Flows
+## 1. Rà Soát Các Luồng Hiện Tại
 
-### 1.1. Registration
+### 1.1. Đăng Ký (Registration)
 
-**Current flow:**
-- Client generates a mnemonic and secp256k1 key pair locally
-- Client signs the data: `email:fullName:dateOfBirth:timestamp`
-- Sends a signed request to `/api/user/register`
-- API verifies the signature and stores the user in `users.json`
-- Stores `Signature` and `RegistrationTimestamp` for blockchain operations
+**Luồng hiện tại:**
+- Client tạo mnemonic và key pair (secp256k1) local
+- Client ký dữ liệu: `email:fullName:dateOfBirth:timestamp`
+- Gửi request với signature đến API `/api/user/register`
+- API verify signature và lưu user vào `users.json`
+- Lưu `Signature` và `RegistrationTimestamp` cho blockchain operations
 
-**Stored data:**
+**Dữ liệu được lưu:**
 - PublicKey (identity)
 - Email, FullName, DateOfBirth, Bio, AvatarUrl
-- Signature (registration signature)
+- Signature (chữ ký đăng ký)
 - RegistrationTimestamp
 
-### 1.2. Login
+### 1.2. Đăng Nhập (Login)
 
-**Current flow:**
-- Client has no dedicated login endpoint
-- Uses authentication headers on every request:
-  - `X-User-PubKey`: User's public key
+**Luồng hiện tại:**
+- Client không có endpoint đăng nhập riêng
+- Sử dụng authentication headers cho mọi request:
+  - `X-User-PubKey`: Public key của user
   - `X-Timestamp`: Unix timestamp
-  - `X-Signature`: Signature of `method + path + timestamp + bodyHash`
-- API verifies the signature and checks that the user is registered
+  - `X-Signature`: Signature của `method + path + timestamp + bodyHash`
+- API verify signature và kiểm tra user đã đăng ký
 
-**Issue:** No session; every request must be signed
+**Vấn đề:** Không có session, mỗi request đều phải ký
 
 ### 1.3. Follow/Unfollow
 
-**Current flow:**
-- Client creates a follow action: `{"action":"follow","follower":"...","following":"...","timestamp":"..."}`
-- Signs this action with the private key
-- Sends it to `/api/user/follow` with:
-  - SignedData (JSON of the action)
-  - Signature (signature of SignedData)
+**Luồng hiện tại:**
+- Client tạo follow action: `{"action":"follow","follower":"...","following":"...","timestamp":"..."}`
+- Ký action này với private key
+- Gửi đến `/api/user/follow` với:
+  - SignedData (JSON của action)
+  - Signature (chữ ký của SignedData)
   - Timestamp
-- API verifies the signature and stores it in `user_follows.json`
-- Stores the follow action's `Signature` and `Timestamp`
+- API verify signature và lưu vào `user_follows.json`
+- Lưu `Signature` và `Timestamp` của follow action
 
-**Stored data:**
+**Dữ liệu được lưu:**
 - FollowerPublicKey
 - FollowingPublicKey
 - Timestamp
 - Signature
 
-### 1.4. Create Post
+### 1.4. Viết Bài (Create Post)
 
-**Current flow:**
-1. **Post with images:**
-   - Upload images to a store node (encrypted with ECIES or PRE)
-   - Create post content (JSON) with image metadata
+**Luồng hiện tại:**
+1. **Post với ảnh:**
+   - Upload ảnh lên store node (encrypted với ECIES hoặc PRE)
+   - Tạo post content (JSON) với metadata về ảnh
    - Encrypt post content
-   - Upload metadata and blocks to the store node
-   - A post may be:
-     - `encryptedType: "public"` — not encrypted
-     - `encryptedType: "encrypted"` — encrypted with ECIES
-     - `shareType: "followers"` — shared with followers (using PRE)
+   - Upload metadata và blocks lên store node
+   - Post có thể là:
+     - `encryptedType: "public"` - không mã hóa
+     - `encryptedType: "encrypted"` - mã hóa với ECIES
+     - `shareType: "followers"` - chia sẻ cho followers (dùng PRE)
 
-2. **Text-only post:**
-   - Same as above, without attached images
+2. **Post text-only:**
+   - Tương tự nhưng không có ảnh đính kèm
 
-**Stored data:**
-- FileMetadata with `type: "post"`
-- EncryptedKey (ECIES or PRE capsule)
+**Dữ liệu được lưu:**
+- FileMetadata với `type: "post"`
+- EncryptedKey (ECIES hoặc PRE capsule)
 - OwnerPubKey (author)
 - EncryptedType, ShareType
-- PolicyTag, CapsuleFor, PolicyScheme (for PRE)
+- PolicyTag, CapsuleFor, PolicyScheme (cho PRE)
 
 ### 1.5. React (Like/Comment)
 
-**Current flow:**
+**Luồng hiện tại:**
 1. **Reaction:**
-   - Create a file with `type: "react"`, `parentFileId: postFileId`, `kind: "like|love|laugh|wow|sad|angry"`
-   - Public reaction: `isPublic: true`, not encrypted
-   - Encrypted reaction: encrypted with ECIES for the post owner
-   - Upload metadata and block0 to the store node
+   - Tạo file với `type: "react"`, `parentFileId: postFileId`, `kind: "like|love|laugh|wow|sad|angry"`
+   - Public reaction: `isPublic: true`, không mã hóa
+   - Encrypted reaction: mã hóa với ECIES cho post owner
+   - Upload metadata và block0 lên store node
 
 2. **Comment:**
-   - Create a file with `type: "comment"`, `parentFileId: postFileId`
-   - `shareType: "author"` (author only) or `"public"` (visible to everyone)
-   - Comments may include attached images (relatedFiles)
-   - Upload metadata and blocks to the store node
+   - Tạo file với `type: "comment"`, `parentFileId: postFileId`
+   - `shareType: "author"` (chỉ author xem) hoặc `"public"` (mọi người xem)
+   - Comment có thể có ảnh đính kèm (relatedFiles)
+   - Upload metadata và blocks lên store node
 
-**Stored data:**
-- FileMetadata with `type: "react"` or `"comment"`
-- ParentFileId (link to the post)
-- OwnerPubKey (the user who reacted/commented)
-- EncryptedKey (if encrypted)
+**Dữ liệu được lưu:**
+- FileMetadata với `type: "react"` hoặc `"comment"`
+- ParentFileId (link đến post)
+- OwnerPubKey (người react/comment)
+- EncryptedKey (nếu encrypted)
 - ShareType, EncryptedType
 
 ### 1.6. Node Authentication
 
 **Store Nodes:**
-- Each store node has its own mnemonic and key pair
-- Registers with the API using a voucher
-- Stores PublicKey and Endpoint in `nodes.json`
-- Store nodes can authenticate requests with their keys
+- Mỗi store node có mnemonic và key pair riêng
+- Đăng ký với API bằng voucher
+- Lưu PublicKey và Endpoint vào `nodes.json`
+- Store nodes có thể authenticate requests với key của chúng
 
 **API Nodes:**
-- Currently there is no dedicated authentication for API nodes
-- API nodes only verify user signatures
+- Hiện tại chưa có authentication riêng cho API nodes
+- API nodes chỉ verify user signatures
 
-## 2. Proposed Blockchain Solution
+## 2. Đề Xuất Giải Pháp Blockchain
 
-### 2.1. Architecture Overview (per the deltanium-core README)
+### 2.1. Kiến Trúc Tổng Quan (Theo README của deltanium-core)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -139,18 +139,18 @@
 │              │  (Blockchain)   │                          │   │
 │              └─────────────────┘                          │   │
 │                                                           │   │
-│  5 Node Types:                                            │   │
-│  1. Block Creator Nodes: Create and validate blocks      │   │
-│  2. User Nodes: Create transactions, interact with content│  │
-│  3. Content Store Nodes: Store encrypted content         │   │
-│  4. Inspector Nodes: Audit and verify blocks             │   │
-│  5. Router Nodes: Route files to Content Store nodes     │   │
+│  5 Loại Node:                                             │   │
+│  1. Block Creator Nodes: Tạo blocks, validate blocks     │   │
+│  2. User Nodes: Tạo transactions, interact với content  │   │
+│  3. Content Store Nodes: Lưu trữ encrypted content      │   │
+│  4. Inspector Nodes: Audit và verify blocks             │   │
+│  5. Router Nodes: Route files đến Content Store nodes   │   │
 └───────────────────────────────────────────────────────────┘
 ```
 
 ### 2.2. Transaction Types
 
-Every action is a transaction:
+Mọi hành động đều là transaction:
 
 #### 2.2.1. UserRegistration Transaction
 ```json
@@ -267,7 +267,7 @@ Every action is a transaction:
 }
 ```
 
-#### 2.2.8. StorageOperation Transaction (new flow)
+#### 2.2.8. StorageOperation Transaction (luồng mới)
 ```json
 {
   "type": "storage_operation",
@@ -341,36 +341,36 @@ Every action is a transaction:
 }
 ```
 
-### 2.4. Consensus Mechanism (per the deltanium-core README)
+### 2.4. Consensus Mechanism (Theo README của deltanium-core)
 
-**Central Coordination with Block Creator Selection**
+**Central Coordination với Block Creator Selection**
 
 #### Central Coordination
-- The central node (deltanium.com) manages and authorizes nodes
-- Nodes must be authenticated by the central node to create blocks or store content
-- The central node provides:
-  - Authentication Authority: Authenticates nodes
-  - Node Registry: Manages the node list
-  - Block Creation Scheduler: Selects the Block Creator for the next block
-  - Health Monitoring: Monitors node health
+- Central node (deltanium.com) quản lý và authorize các nodes
+- Nodes phải được central node authenticate để tạo blocks hoặc store content
+- Central node có các chức năng:
+  - Authentication Authority: Xác thực nodes
+  - Node Registry: Quản lý danh sách nodes
+  - Block Creation Scheduler: Chọn Block Creator cho block tiếp theo
+  - Health Monitoring: Monitor health của nodes
 
 #### Transaction Processing
-- Transactions are broadcast to all Block Creator nodes
-- The central node selects which Block Creator will create the next block
-- The selected Block Creator must create the block within a time limit
-- If it fails to create the block in time → penalty (loss of stake)
+- Transactions được broadcast đến tất cả Block Creator nodes
+- Central node chọn Block Creator nào sẽ tạo block tiếp theo
+- Block Creator được chọn phải tạo block trong thời gian giới hạn
+- Nếu không tạo block kịp thời → bị penalty (mất tiền đặt cọc)
 
 #### Block Validation
-- Blocks must be created by authorized nodes
-- All transactions in the block must be valid
-- Block Creator nodes validate new blocks and signal acceptance
-- If invalid, nodes report to the central node and Inspector nodes
+- Blocks phải được tạo bởi authorized nodes
+- Tất cả transactions trong block phải valid
+- Block Creator nodes validate blocks mới và signal acceptance
+- Nếu invalid, nodes report đến central node và Inspector nodes
 
 #### Inspection Process
-- Inspector nodes receive new blocks
-- Wait for Block Creator validations
-- If issues are reported, re-validate the block
-- May request block cancellation if invalid
+- Inspector nodes nhận blocks mới
+- Chờ Block Creator validations
+- Nếu có reports về issues, re-validate block
+- Có thể request block cancellation nếu invalid
 - Periodically perform random block audits
 
 ### 2.5. State Management
@@ -382,14 +382,14 @@ Every action is a transaction:
 - Reaction references
 - Comment references
 - Node registry (all 5 node types)
-- D coin balances (UTXO or Account model)
+- D coin balances (UTXO hoặc Account model)
 - Transaction history
 
 **Local State (Content Store Nodes):**
 - Actual file content (encrypted)
 - File metadata (encrypted)
-- Chunk data (files split into chunks)
-- Merkle tree of chunks
+- Chunks data (files được split thành chunks)
+- Merkle tree của chunks
 
 **Local State (Router Nodes):**
 - Network topology
@@ -405,10 +405,10 @@ State(t+1) = State(t) + Apply(Block(t+1))
 ### 2.6. Implementation Strategy
 
 #### Phase 1: Transaction Layer
-1. Define transaction types
+1. Định nghĩa transaction types
 2. Implement transaction signing/verification
-3. Convert existing actions into transactions
-4. Store transactions locally before broadcast
+3. Convert existing actions thành transactions
+4. Store transactions locally trước khi broadcast
 
 #### Phase 2: Block Layer
 1. Implement block structure
@@ -417,7 +417,7 @@ State(t+1) = State(t) + Apply(Block(t+1))
 4. Implement block validation
 
 #### Phase 3: Network Layer
-1. Implement P2P protocol (libp2p or custom)
+1. Implement P2P protocol (libp2p hoặc custom)
 2. Implement transaction propagation
 3. Implement block propagation
 4. Implement sync mechanism
@@ -434,74 +434,74 @@ State(t+1) = State(t) + Apply(Block(t+1))
 3. Gradual migration
 4. Full blockchain mode
 
-### 2.7. Node Types and Roles (per the deltanium-core README)
+### 2.7. Node Types và Roles (Theo README của deltanium-core)
 
 #### 2.7.1. User Nodes
 - **Keys:** User's mnemonic/key pair
-- **Role:** Create transactions, interact with content
-- **Storage:** Local blockchain state (light client or full node)
+- **Role:** Tạo transactions, interact với content
+- **Storage:** Local blockchain state (light client hoặc full node)
 - **Capabilities:**
   - Create transactions (registration, follow, post, react, comment, transfer, donate)
-  - Upload files and create content
+  - Upload files và create content
   - Perform actions on content (like, love, donate)
   - Transfer D coins to other users
   - Query blockchain state
-  - Sync with the network
+  - Sync với network
 
 #### 2.7.2. Block Creator Nodes
-- **Keys:** Node's mnemonic/key pair (registered with the Central Node)
-- **Role:** Create and validate blocks
+- **Keys:** Node's mnemonic/key pair (đăng ký với Central Node)
+- **Role:** Tạo blocks, validate blocks
 - **Storage:** Full blockchain state
 - **Requirements:**
-  - Must be authenticated by the Central Node
-  - Must stake D coins (penalized if a block is not created in time)
+  - Phải được Central Node authenticate
+  - Phải stake D coins (bị penalty nếu không tạo block kịp thời)
 - **Capabilities:**
-  - Process transactions and add them to the blockchain
+  - Process transactions và add vào blockchain
   - Validate blocks created by other nodes
   - Receive transaction fees
   - Maintain transaction pool
 
 #### 2.7.3. Content Store Nodes
-- **Keys:** Node's mnemonic/key pair (registered with the Central Node)
+- **Keys:** Node's mnemonic/key pair (đăng ký với Central Node)
 - **Role:** Storage provider
 - **Storage:** Full blockchain state + encrypted file storage
 - **Requirements:**
-  - Must be authenticated by the Central Node
+  - Phải được Central Node authenticate
 - **Capabilities:**
   - Store content, files, images, videos (encrypted)
-  - Authenticate file delivery with the key pair
+  - Authenticate file delivery với key pair
   - Receive storage fees
   - Serve file requests
 
 #### 2.7.4. Inspector Nodes
-- **Keys:** Node's mnemonic/key pair (registered with the Central Node)
-- **Role:** Audit and verify blocks
+- **Keys:** Node's mnemonic/key pair (đăng ký với Central Node)
+- **Role:** Audit và verify blocks
 - **Storage:** Full blockchain state
 - **Capabilities:**
-  - Audit and verify blocks
-  - Mark invalid blocks and impose penalties
+  - Audit và verify blocks
+  - Mark invalid blocks và impose penalties
   - Randomly check blocks for compliance
-  - Request block cancellation if invalid
+  - Request block cancellation nếu invalid
 
 #### 2.7.5. Router Nodes
-- **Keys:** Node's mnemonic/key pair (registered with the Central Node)
-- **Role:** Route files to Content Store nodes
+- **Keys:** Node's mnemonic/key pair (đăng ký với Central Node)
+- **Role:** Route files đến Content Store nodes
 - **Storage:** Network topology, routing tables
 - **Capabilities:**
-  - Determine which Content Store node will store uploaded files
-  - Direct file retrieval requests to the appropriate Content Store nodes
-  - Optimize content delivery based on availability and performance
+  - Determine which Content Store node sẽ store uploaded files
+  - Direct file retrieval requests đến appropriate Content Store nodes
+  - Optimize content delivery based on availability và performance
 
 ### 2.8. Security Considerations
 
 #### 2.8.1. Transaction Security
-- Every transaction must be signed with a private key
-- Verify the signature before accepting the transaction
+- Mọi transaction phải có signature từ private key
+- Verify signature trước khi accept transaction
 - Timestamp validation (prevent replay attacks)
 - Nonce mechanism (prevent duplicate transactions)
 
 #### 2.8.2. Block Security
-- Block hash must match the difficulty
+- Block hash phải match difficulty
 - Merkle root validation
 - Previous block hash validation
 - Transaction order validation
@@ -509,42 +509,42 @@ State(t+1) = State(t) + Apply(Block(t+1))
 #### 2.8.3. Network Security
 - P2P encryption (TLS/SSL)
 - Node authentication
-- Sybil attack prevention (node registration with voucher)
+- Sybil attack prevention (node registration với voucher)
 - DDoS protection
 
 ### 2.9. Privacy Considerations
 
 #### 2.9.1. On-Chain Data
 - **Public:** Transaction types, timestamps, public keys
-- **Encrypted:** User data (email, fullName, etc.) may be hashed
+- **Encrypted:** User data (email, fullName, etc.) có thể hash
 - **Off-chain:** Actual content (posts, comments, files)
 
 #### 2.9.2. Zero-Knowledge Features
-- Preserve zero-knowledge sharing (PRE with Umbral)
-- The blockchain stores only references, not content
-- Content remains encrypted on Content Store nodes
+- Giữ nguyên zero-knowledge sharing (PRE với Umbral)
+- Blockchain chỉ lưu references, không lưu content
+- Content vẫn encrypted trên Content Store nodes
 - Even Content Store nodes cannot read content (double encryption)
-- Only the owner and authorized users can access content
+- Only owner và authorized users có thể access content
 
 #### 2.9.3. Content Encryption
-- Files are split into chunks and encrypted
-- Unique content ID for each chunk
-- File ID is created from a Merkle tree of chunk IDs
-- Content is double-encrypted for transmission
+- Files được split thành chunks và encrypt
+- Unique content ID cho mỗi chunk
+- File ID được tạo bằng Merkle tree của chunk IDs
+- Content được double-encrypted cho transmission
 
 ### 2.10. Performance Optimization
 
 #### 2.10.1. Light Clients
-- Users can run light clients (headers only)
-- Full nodes (Block Creator, Content Store, Inspector) store the full state
-- Merkle proofs for state queries
+- Users có thể chạy light clients (chỉ headers)
+- Full nodes (Block Creator, Content Store, Inspector) lưu full state
+- Merkle proofs cho state queries
 
 #### 2.10.2. Content Distribution
-- Files are distributed across multiple Content Store nodes
+- Files được distributed across multiple Content Store nodes
 - Router nodes optimize content delivery
-- P2P direct transfer capabilities for speed
+- P2P direct transfer capabilities cho speed
 - Multi-source downloading based on network conditions
-- CDN integration for content distribution
+- CDN integration cho content distribution
 
 #### 2.10.3. Caching
 - Cache frequent queries
@@ -559,42 +559,42 @@ State(t+1) = State(t) + Apply(Block(t+1))
 ### 2.11. Migration Path
 
 #### Step 1: Dual Mode
-- The current system continues to operate
-- Add a parallel blockchain layer
-- Each action produces both an API call and a transaction
+- Hệ thống hiện tại vẫn hoạt động
+- Thêm blockchain layer song song
+- Mỗi action tạo cả API call và transaction
 
 #### Step 2: Gradual Migration
 - Migrate existing data to blockchain
-- Users can opt into blockchain mode
-- API nodes serve both old and new data
+- Users có thể chọn blockchain mode
+- API nodes serve cả old và new data
 
 #### Step 3: Full Blockchain
-- Disable API mode
-- Blockchain-only mode
+- Tắt API mode
+- Chỉ blockchain mode
 - All nodes participate in consensus
 
-### 2.12. Example Flow: Create Post with Blockchain
+### 2.12. Example Flow: Create Post với Blockchain
 
 ```
-1. User creates post content
+1. User tạo post content
    ↓
-2. Split the file into chunks and encrypt
+2. Split file thành chunks và encrypt
    ↓
-3. Generate a unique content ID for each chunk
+3. Generate unique content ID cho mỗi chunk
    ↓
-4. Create the file ID from a Merkle tree of chunk IDs
+4. Create file ID bằng Merkle tree của chunk IDs
    ↓
-5. Send the request to Router nodes
+5. Send request đến Router nodes
    ↓
 6. User signs upload request
    ↓
-7. Content Store nodes sign to accept storage responsibility
+7. Content Store nodes sign để accept storage responsibility
    ↓
 8. User approves specific Content Store nodes
    ↓
-9. Content chunks are transmitted to approved nodes
+9. Content chunks transmitted đến approved nodes
    ↓
-10. User creates a CreatePost transaction:
+10. User tạo CreatePost transaction:
     {
       type: "create_post",
       from: user_public_key,
@@ -612,11 +612,11 @@ State(t+1) = State(t) + Apply(Block(t+1))
     ↓
 11. Broadcast transaction to all Block Creator nodes
     ↓
-12. Central Node selects a Block Creator to create the block
+12. Central Node selects Block Creator để tạo block
     ↓
-13. Selected Block Creator validates and includes the transaction
+13. Selected Block Creator validates và includes transaction
     ↓
-14. Block Creator creates the block and broadcasts it
+14. Block Creator creates block và broadcasts
     ↓
 15. Block Creator nodes validate block
     ↓
@@ -627,44 +627,44 @@ State(t+1) = State(t) + Apply(Block(t+1))
 18. State updated: postId -> storageNodeId, fileId
 ```
 
-### 2.13. Benefits of the Blockchain Approach
+### 2.13. Benefits của Blockchain Approach
 
-1. **Decentralization:** Not dependent on a single node (except the Central Coordinator)
-2. **Immutability:** Transactions cannot be modified or deleted
-3. **Transparency:** Every node can verify state
-4. **Resilience:** The network continues to operate if some nodes go down
-5. **Auditability:** Full history of every action
-6. **Trust:** The Central Coordinator manages the network, but the blockchain remains transparent
-7. **Incentives:** Transaction fees and storage fees incentivize nodes
-8. **Security:** Inspector nodes audit blocks; penalties for bad actors
+1. **Decentralization:** Không phụ thuộc vào single node (trừ Central Coordinator)
+2. **Immutability:** Transactions không thể sửa/xóa
+3. **Transparency:** Mọi node có thể verify state
+4. **Resilience:** Network vẫn hoạt động nếu một số nodes down
+5. **Auditability:** Full history của mọi action
+6. **Trust:** Central Coordinator quản lý nhưng blockchain vẫn transparent
+7. **Incentives:** Transaction fees và storage fees incentivize nodes
+8. **Security:** Inspector nodes audit blocks, penalties cho bad actors
 9. **Scalability:** Router nodes optimize content delivery
 10. **Privacy:** Content encrypted, even storage nodes cannot read
 
-### 2.14. Challenges and Solutions
+### 2.14. Challenges và Solutions
 
 #### Challenge 1: Scalability
-- **Problem:** The blockchain can slow down under high transaction volume
-- **Solution:**
+- **Problem:** Blockchain có thể chậm với nhiều transactions
+- **Solution:** 
   - Fast block time (5-10s)
   - Batch transactions
-  - Off-chain content (references only on-chain)
+  - Off-chain content (chỉ references on-chain)
 
 #### Challenge 2: Storage
-- **Problem:** Full blockchain state is large
+- **Problem:** Full blockchain state lớn
 - **Solution:**
-  - Light clients for users
-  - Full nodes only for store/API nodes
-  - Pruning old data (if needed)
+  - Light clients cho users
+  - Full nodes chỉ cho store/API nodes
+  - Pruning old data (nếu cần)
 
 #### Challenge 3: Privacy
-- **Problem:** The blockchain is public, but privacy is required
+- **Problem:** Blockchain public, nhưng cần privacy
 - **Solution:**
-  - Store only references on-chain
+  - Chỉ lưu references on-chain
   - Content encrypted off-chain
   - Zero-knowledge proofs (PRE)
 
 #### Challenge 4: User Experience
-- **Problem:** Blockchain can be complex for users
+- **Problem:** Blockchain có thể phức tạp cho users
 - **Solution:**
   - Abstract blockchain complexity
   - Fast confirmation (5-10s)
@@ -674,63 +674,63 @@ State(t+1) = State(t) + Apply(Block(t+1))
 
 ### 3.1. Transaction Pool
 
-Each node maintains a transaction pool:
-- Pending transactions waiting to be included in a block
-- Validate transactions before adding them to the pool
-- Remove transactions after they are included in a block
+Mỗi node maintain một transaction pool:
+- Pending transactions chờ được include vào block
+- Validate transactions trước khi add vào pool
+- Remove transactions sau khi included trong block
 - Prioritize transactions (fees, timestamp)
 
 ### 3.2. Block Creation
 
-1. Validator collects transactions from the pool
-2. Validate all transactions
+1. Validator collects transactions từ pool
+2. Validate tất cả transactions
 3. Create Merkle tree
-4. Calculate the block hash with difficulty
-5. Sign the block with the validator's key
+4. Calculate block hash với difficulty
+5. Sign block với validator's key
 6. Broadcast block to network
 
 ### 3.3. Fork Resolution
 
 - Longest chain rule
-- If a fork occurs, choose the chain with more blocks
-- Reorg if needed (revert transactions)
+- Nếu có fork, chọn chain có nhiều blocks hơn
+- Reorg nếu cần (revert transactions)
 
 ### 3.4. Sync Mechanism
 
-- New nodes request blocks from genesis
+- New nodes request blocks từ genesis
 - Existing nodes sync missing blocks
-- State sync (if needed)
+- State sync (nếu cần)
 
-## 3.15 Implementation Status (Current State)
+## 3.15 Implementation Status (Hiện trạng)
 
-Detailed assessment and roadmap: **BLOCKCHAIN_PLAN.md**.
+Tài liệu chi tiết đánh giá và lộ trình: **BLOCKCHAIN_PLAN.md**.
 
-**Already in place (MVP/prototype):**
-- **Block Creator:** Block creation loop, mempool (`mempool.json`), chain state (`blocks.json`). Central API signs the decision (tx) and block-slot; Blocker verifies with the Central pubkey.
-- **Transaction types:** Blocker accepts all 10 types (UserRegistration → Donate). The **App** submits **Follow** and **Unfollow**. The **Store** submits **StorageOperation** (contract envelope: hash + appSignature + storageNodeSignature + content) for post, react, comment, and chat_message.
-- **Storage contract:** App ↔ Store sign a contract (V1 message / V2 contract hash); Store submits a StorageOperation tx; Blocker validates the contract hash and signatures.
-- **Central API:** User registration, follow graph, store/block creator node registry, voucher, PRE rekey; decision + block-slot (random blocker selection, signs a SHA256 message).
+**Đã có (MVP/prototype):**
+- **Block Creator:** Block creation loop, mempool (mempool.json), chain state (blocks.json). Central API ký decision (tx) và block-slot; Blocker verify với Central pubkey.
+- **Transaction types:** Blocker chấp nhận đủ 10 loại (UserRegistration → Donate). **App** gửi **Follow, Unfollow**. **Store** gửi **StorageOperation** (contract envelope: hash + appSignature + storageNodeSignature + content) cho post, react, comment, chat_message.
+- **Storage contract:** App ↔ Store ký hợp đồng (V1 message / V2 contract hash); Store submit một StorageOperation tx; Blocker validate contract hash và chữ ký.
+- **Central API:** User registration, follow graph, store/block creator node registry, voucher, PRE rekey; decision + block-slot (chọn blocker ngẫu nhiên, ký SHA256 message).
 
-**Not yet implemented / Differs from the proposal:**
-- **UserRegistration tx:** The App only calls the registration API; it does not yet submit a UserRegistration tx to the chain.
-- **CreatePost tx:** Only a StorageOperation from Store exists (with fileId, contract); there is no separate CreatePost tx from the App (postId, fileId, storageNodeId).
-- **State from chain:** API/Store remain the source of truth (`users.json`, `user_follows.json`); there is no **Blockchain Indexer** to rebuild state from blocks.
-- **Persistence:** JSON (users, blocks, mempool); no database yet.
-- **P2P / Gossip:** Not yet; HTTP via Central only.
-- **Consensus:** Random blocker selection; no PoA/PoS yet.
-- **Inspector, Router nodes:** Not implemented.
-- **D-Coin, Transfer, Donate:** Schema exists; no balances, reward distribution, or wallet yet.
+**Chưa có / Khác proposal:**
+- **UserRegistration tx:** App chỉ gọi API đăng ký, chưa gửi tx UserRegistration lên chain.
+- **CreatePost tx:** Chỉ có StorageOperation từ Store (có fileId, contract); không có tx CreatePost riêng từ App (postId, fileId, storageNodeId).
+- **State từ chain:** API/Store vẫn là source of truth (users.json, user_follows.json); chưa có **Blockchain Indexer** rebuild state từ blocks.
+- **Persistence:** JSON (users, blocks, mempool); chưa DB.
+- **P2P / Gossip:** Chưa; chỉ HTTP qua Central.
+- **Consensus:** Chọn blocker ngẫu nhiên; chưa PoA/PoS.
+- **Inspector, Router nodes:** Chưa triển khai.
+- **D-Coin, Transfer, Donate:** Schema có; chưa balance, reward distribution, ví.
 
-**Conclusion:** The migration has reached **MVP** (storage + follow on-chain, block creation with Central coordination). Still incomplete: chain-derived state (indexer), P2P, real consensus, and D-Coin economics. Remaining gaps and the roadmap: **BLOCKCHAIN_PLAN.md**.
+**Kết luận:** Lộ trình chuyển đổi đã đạt **MVP** (storage + follow on-chain, block creation với Central coordination). Chưa hoàn thành đầy đủ: state từ chain (indexer), P2P, consensus thật, kinh tế D-Coin. Chi tiết còn thiếu và roadmap: **BLOCKCHAIN_PLAN.md**.
 
 ## 4. Next Steps
 
-1. ~~**Prototype:** Implement a basic blockchain with 1–2 transaction types~~ → **Done (MVP):** StorageOperation, Follow/Unfollow, blocks + Central decision/slot.
-2. **State & persistence:** Blockchain Indexer rebuilds state from blocks; replace JSON with a database (Phase 1 in BLOCKCHAIN_PLAN.md).
-3. **Test:** Test with a small network (multiple blockers, store).
-4. **Decentralization:** P2P gossip, defined consensus (PoA/round-robin) — Phase 2.
+1. ~~**Prototype:** Implement basic blockchain với 1-2 transaction types~~ → **Done (MVP):** StorageOperation, Follow/Unfollow, blocks + Central decision/slot.
+2. **State & persistence:** Blockchain Indexer rebuild state từ blocks; thay JSON bằng DB (Phase 1 trong BLOCKCHAIN_PLAN.md).
+3. **Test:** Test với small network (nhiều blockers, store).
+4. **Decentralization:** P2P gossip, consensus xác định (PoA/round-robin) — Phase 2.
 5. **Economy & security:** D-Coin, fee distribution, Transfer/Donate; secure wallet; audit — Phase 3.
-6. **Optional:** App submits a UserRegistration tx after registration; submits a CreatePost tx (reference) after Store receives the file.
+6. **Optional:** App gửi UserRegistration tx sau đăng ký; gửi CreatePost tx (reference) sau khi Store nhận file.
 7. **Deploy / Migrate / Launch:** Testnet → migrate data → mainnet.
 
 ## 5. References
@@ -740,3 +740,4 @@ Detailed assessment and roadmap: **BLOCKCHAIN_PLAN.md**.
 - Hyperledger Fabric: Permissioned blockchain
 - IPFS: Distributed file storage
 - libp2p: P2P networking
+

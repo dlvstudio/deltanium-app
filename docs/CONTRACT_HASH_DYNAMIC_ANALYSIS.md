@@ -1,102 +1,102 @@
-# Analysis: Dynamic contract hash (avoid a fixed field list)
+# Phân tích: Contract hash dynamic (tránh fixed field list)
 
-## Current state
+## Hiện trạng
 
-### V1 (sign a message)
-- **Message** = fixed format: `TimeFixed|start|end|appPubKey|storagePubKey|totalFee|totalFileSize` (or OpenEnded|...).
-- **Problem:** Adding any new field (for example `renewalOption`, `metadata`) requires changing the message format in the App, Store, and Blocker. Easy to break.
+### V1 (ký message)
+- **Message** = format cố định: `TimeFixed|start|end|appPubKey|storagePubKey|totalFee|totalFileSize` (hoặc OpenEnded|...).
+- **Vấn đề:** Thêm bất kỳ field mới (ví dụ `renewalOption`, `metadata`) → phải sửa format message → sửa App, Store, Blocker. Rất dễ vỡ.
 
-### V2 (sign a contract hash) today
-- **Canonical** = a **fixed** list of 11 fields (appPublicKey, contractId, contractType, createdAtUnix, endDateUnix?, fileIds, startDateUnix, status, storageNodePublicKey, totalFee, totalFileSize).
-- **Problem:** If Store returns extra fields (for example `renewalOption`, `billingCycle`) and those fields should be part of the signed contract, they must be added to the canonical list in **all three** places (App, Store, Blocker). The code is not dynamic.
-
----
-
-## Goal
-
-- When Store sends a new field to the App, we should **not** have to patch many places (ideally not all three codebases).
-- V2 should **sign the contract contents** (equivalent to the JSON Store returns), not build a message from a fixed field list like V1.
+### V2 (ký contract hash) hiện tại
+- **Canonical** = danh sách **cố định** 11 field (appPublicKey, contractId, contractType, createdAtUnix, endDateUnix?, fileIds, startDateUnix, status, storageNodePublicKey, totalFee, totalFileSize).
+- **Vấn đề:** Store trả thêm field mới (ví dụ `renewalOption`, `billingCycle`) → muốn field đó “có trong contract” khi ký thì phải thêm vào canonical ở **cả 3 nơi** (App, Store, Blocker). Code không “dynamic”.
 
 ---
 
-## Approach 1: Store is the source of truth — App only signs the hash Store sends
+## Mục tiêu
 
-**Idea:** Store computes `contractHash` from the contract (using Store's own rules). Store returns `contractHash` in the response (create / get / sign). The App does **not** build a canonical form and does **not** hash locally; it only signs the `contractHash` string Store sent.
-
-**Flow:**
-1. App calls create/sign → Store returns the contract plus `contractHash`.
-2. App shows the contract to the user; the user accepts.
-3. App signs **exactly** the `contractHash` received from Store and sends `appSignature` (and optionally `signingVersion: 2`) back to Store.
-4. Store already has the contract and `contractHash`; it verifies the App signature over `contractHash` and is done.
-5. When submitting a tx to the Blocker, Store sends the contract, `contractHash`, and signatures. The Blocker only needs to verify the signature over `contractHash` (already implemented).
-
-**When Store adds a new field:**
-- Only **Store** decides whether that field is included in the canonical form used to compute `contractHash`.
-- If Store uses a **dynamic canonical** (see Approach 3), it only needs to ensure the contract object has the new field before calling `ComputeContractHash`. App and Blocker **do not change code**.
-
-**Pros:**
-- One source of truth: **Store** decides what the contract is and what hash is signed.
-- App / Blocker need no canonical logic and no field list.
-- A new field from Store at most requires a Store change (and only if Store changes how the hash is computed).
-
-**Cons:**
-- The App must trust the hash Store sends (acceptable in practice: the App is signing the contract Store described).
+- Khi Store gửi thêm field mới cho App, **không phải** sửa nhiều chỗ (ít nhất là không phải sửa cả 3 codebase).
+- V2 nên **ký trên “nội dung contract”** (tương đương JSON Store trả về), không build message từ danh sách field cố định như V1.
 
 ---
 
-## Approach 2: Canonical = “every field except an exclusion list”
+## Hướng 1: Store là nguồn chân lý — App chỉ ký hash Store gửi
 
-**Idea:** Do not define canonical as an **allow-list** of fields. Instead:
-- Take the whole contract object **except** a few “proof-only” keys that are not contract content.
-- Exclusion list: `contractHash`, `messageToSign`, `appSignature`, `storageNodeSignature` (extend later if needed).
-- Remaining keys → sort alphabetically → serialize values with a shared convention → that is the canonical JSON.
+**Ý tưởng:** Store tính `contractHash` từ contract (theo quy tắc Store muốn). Store trả về `contractHash` trong response (create / get / sign). App **không** tự build canonical, **không** tự tính hash; App chỉ ký chuỗi `contractHash` mà Store đã gửi.
 
-**Value conventions (so App / Store / Blocker produce the same hash):**
-- `totalFee` → always string F10 (already used).
-- `fileIds` → array of strings, sorted alphabetically.
-- Numbers → number (integer if whole, no extra `.0`).
-- Unknown “new” fields → standard JSON (string, number, bool, array, object). All three sides only need the same rules (for example “number as number, string as string”) for hashes to match.
+**Luồng:**
+1. App gọi create/sign → Store trả contract + `contractHash`.
+2. App hiển thị contract cho user, user đồng ý.
+3. App ký **đúng chuỗi** `contractHash` nhận từ Store → gửi `appSignature` (và có thể `signingVersion: 2`) lên Store.
+4. Store đã có contract + contractHash; verify chữ ký App trên `contractHash` → coi như xong.
+5. Khi submit tx lên Blocker, Store gửi contract + `contractHash` + chữ ký. Blocker chỉ cần verify chữ ký trên `contractHash` (đã làm).
 
-**When Store adds a new field:**
-- The new field is on the contract object → it is **automatically** in the canonical form (it is not on the exclusion list).
-- App / Store / Blocker all use “all keys except X, sort, serialize” → no field-list change when adding fields.
+**Khi Store thêm field mới:**
+- Chỉ **Store** cần quyết định: field đó có nằm trong “canonical” để tính `contractHash` hay không.
+- Nếu Store dùng **dynamic canonical** (xem Hướng 3) → chỉ cần đảm bảo object contract có field mới trước khi gọi `ComputeContractHash`; App và Blocker **không đổi code**.
 
-**Pros:**
-- Truly dynamic: adding a field does not require a code change (as long as serialization stays consistent).
-- The Blocker can still recompute the hash from the received contract if desired.
+**Ưu điểm:**
+- Một nguồn chân lý: **Store** quyết định “contract là gì” và “hash để ký là gì”.
+- App / Blocker không cần logic canonical, không cần danh sách field.
+- Thêm field mới từ Store → tối đa chỉ sửa Store (và chỉ khi Store đổi cách tính hash).
 
-**Cons:**
-- All three sides must implement the **same** serialization rules; easy to drift on edge cases (floats, null, nested key order).
-
----
-
-## Approach 3: Combined — Store computes the hash using a dynamic canonical
-
-**Idea:**
-- **Store** is the only place that builds the canonical form and computes `contractHash` (Approach 1).
-- Inside Store, canonical is built with the **dynamic rule** (Approach 2): every contract field except the exclusion list, sorted keys, standard serialize.
-- App only signs the `contractHash` Store returns; Blocker only verifies the signature over `contractHash` in the tx.
-
-**Result:**
-- Adding a field from Store: only ensure the Store contract object has that field before calling the dynamic canonical function. App and Blocker do not change.
-- Avoids “build a message from a fixed field list” as in V1 entirely.
+**Nhược điểm:**
+- App phải “tin” hash Store gửi (nhưng về mặt nghiệp vụ thì App đang ký đúng “bản contract Store đã mô tả”, nên chấp nhận được).
 
 ---
 
-## Quick comparison
+## Hướng 2: Canonical = “mọi field trừ danh sách loại trừ”
 
-| Criterion | V1 (message) | V2 today (fixed list) | Approach 1 (Store hash) | Approach 2 (dynamic canonical) | Approach 3 (1+2) |
-|-----------|--------------|------------------------|-------------------------|--------------------------------|------------------|
-| New field | Change 3 places, change format | Change 3 places, add to list | Store only (if needed) | No change (auto include) | Store only (if needed) |
-| App builds canonical? | No (builds message) | Yes, 11 fixed fields | **No** | Yes, “all except X” | **No** |
-| Source of truth | Unclear (shared format) | Unclear (shared list) | **Store** | Shared rule on 3 sides | **Store** |
-| App complexity | Medium | High (sync list with Store) | **Low** (sign hash only) | High (serial rules) | **Low** |
+**Ý tưởng:** Không định nghĩa canonical bằng **danh sách field được phép**, mà bằng:
+- Lấy toàn bộ contract (object) **trừ** một số key “chỉ dùng để chứng minh”, không coi là “nội dung contract”.
+- Key loại trừ (exclusion list): `contractHash`, `messageToSign`, `appSignature`, `storageNodeSignature` (và có thể thêm sau nếu cần).
+- Các key còn lại → sort alphabet → serialize giá trị theo quy ước chung → đó là canonical JSON.
+
+**Quy ước giá trị (để hash giống nhau giữa App / Store / Blocker):**
+- `totalFee` → luôn string F10 (đã có).
+- `fileIds` → array string, sort alphabet.
+- Số → number (integer nếu nguyên, không thêm .0 thừa).
+- Các field “mới” chưa biết trước → serialize theo kiểu JSON chuẩn (string, number, bool, array, object). Chỉ cần 3 bên cùng một bộ quy tắc (ví dụ “number as number, string as string”) là hash khớp.
+
+**Khi Store thêm field mới:**
+- Field mới nằm trong object contract → **tự động** vào canonical (vì không nằm trong exclusion list).
+- App / Store / Blocker đều dùng chung rule “all keys except X, sort, serialize” → không cần sửa danh sách field khi thêm field mới.
+
+**Ưu điểm:**
+- Dynamic thật: thêm field thì không phải sửa code (chỉ cần đảm bảo serialization nhất quán).
+- Vẫn có thể verify hash trên Blocker (recompute từ contract nhận được) nếu muốn.
+
+**Nhược điểm:**
+- Cần implement đúng **cùng** quy tắc serial (số, chuỗi, mảng, object) ở 3 nơi; dễ lệch nếu có edge case (float, null, key order trong object lồng nhau).
 
 ---
 
-## Recommendation
+## Hướng 3: Kết hợp — Store tính hash, Store dùng canonical dynamic
 
-- **Short term / small change:** Keep the current V2 flow but **formalize Approach 1**: the App **always** signs the `contractHash` Store returns (it does not hash its own model). Store already returns `contractHash` in the sign response; it can also add it to the create response if the App needs to sign immediately after create. The Blocker already verifies the signature over `contractHash` and does not need to recompute the hash. That is already “sign what Store sent” (the hash of the contract Store described).
-- **Long term / truly dynamic:** Store moves to a **dynamic canonical** (Approach 3): `ComputeContractHash` on Store does not use a fixed 11-field list; it builds from the whole contract object minus the exclusion list, sorted keys, standard serialize. Then a new field from Store does not require App or Blocker changes; Store only needs the field on the contract object before hashing.
+**Ý tưởng:** 
+- **Store** là nơi duy nhất build canonical và tính `contractHash` (Hướng 1).
+- Trong Store, canonical được build theo **quy tắc dynamic** (Hướng 2): “mọi field của contract trừ exclusion list, sort key, serialize chuẩn”.
+- App chỉ ký `contractHash` do Store trả về; Blocker chỉ verify chữ ký trên `contractHash` trong tx.
 
-In short: **“Dynamic” relative to V1’s fixed message is already covered** if we apply Approach 1 (App only signs the hash Store sends). **“New Store fields do not require code changes”** is covered if Store uses a dynamic canonical (Approach 3).
+**Kết quả:**
+- Thêm field mới từ Store: chỉ cần đảm bảo object contract (trong Store) có field đó trước khi gọi hàm “canonical dynamic”. App và Blocker không đổi.
+- Tránh hoàn toàn việc “build message từ danh sách field cố định” như V1.
+
+---
+
+## So sánh nhanh
+
+| Tiêu chí | V1 (message) | V2 hiện tại (fixed list) | Hướng 1 (Store hash) | Hướng 2 (dynamic canonical) | Hướng 3 (1+2) |
+|----------|----------------|---------------------------|----------------------|-----------------------------|----------------|
+| Thêm field mới | Sửa 3 chỗ, đổi format | Sửa 3 chỗ, thêm vào list | Chỉ sửa Store (nếu cần) | Không sửa (auto include) | Chỉ sửa Store (nếu cần) |
+| App build canonical? | Không (build message) | Có, 11 field cố định | **Không** | Có, rule “all except X” | **Không** |
+| Nguồn chân lý | Không rõ (cùng format) | Không rõ (cùng list) | **Store** | Cùng rule 3 bên | **Store** |
+| Độ phức tạch App | Trung bình | Cao (sync list với Store) | **Thấp** (chỉ ký hash) | Cao (serial rule) | **Thấp** |
+
+---
+
+## Đề xuất
+
+- **Ngắn hạn / ít thay đổi:** Giữ luồng V2 hiện tại nhưng **chính thức hóa Hướng 1**: App **luôn** dùng `contractHash` do Store trả về để ký (không tự tính hash từ model). Store đã trả `contractHash` trong sign response; có thể thêm vào create response nếu App cần ký ngay sau create. Blocker đã chỉ verify chữ ký trên `contractHash` → không cần recompute hash. Như vậy đã “ký trên thứ Store gửi” (hash của contract do Store mô tả).
+- **Dài hạn / dynamic thật:** Store chuyển sang **canonical dynamic** (Hướng 3): hàm ComputeContractHash trên Store không dùng danh sách 11 field cố định, mà build từ toàn bộ contract (object) trừ exclusion list, sort key, serialize chuẩn. Khi đó thêm field mới từ Store không đòi hỏi thay đổi App hay Blocker; chỉ cần Store đảm bảo object contract có field mới trước khi tính hash.
+
+Tóm lại: **Đã đảm bảo “dynamic” theo nghĩa “không phụ thuộc fixed message như V1”** nếu ta áp dụng Hướng 1 (App chỉ ký hash Store gửi). **Đảm bảo “field mới từ Store không đòi hỏi sửa code”** nếu Store dùng canonical dynamic (Hướng 3).

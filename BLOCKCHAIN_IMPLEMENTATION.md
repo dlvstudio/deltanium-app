@@ -1,4 +1,4 @@
-# Blockchain Implementation Details for Deltanium
+# Chi Tiết Triển Khai Blockchain cho Deltanium
 
 ## 1. Transaction Structure
 
@@ -780,9 +780,9 @@ namespace Deltanium.Core.Blockchain
 }
 ```
 
-## 5. Integration with Existing Code
+## 5. Integration với Existing Code
 
-### 5.1. Modify UserController to Create Transactions
+### 5.1. Modify UserController để tạo Transaction
 
 ```csharp
 // deltanium-api/Controllers/UserController.cs (modified)
@@ -817,7 +817,7 @@ public async Task<ActionResult<User>> Register([FromBody] SignedRegisterRequest 
 }
 ```
 
-### 5.2. Modify Follow to Create Transactions
+### 5.2. Modify Follow để tạo Transaction
 
 ```csharp
 // deltanium-api/Controllers/UserController.cs (modified)
@@ -903,7 +903,7 @@ class BlockchainService {
 }
 ```
 
-## 6. API Endpoints for Blockchain
+## 6. API Endpoints cho Blockchain
 
 ```csharp
 // deltanium-api/Controllers/BlockchainController.cs

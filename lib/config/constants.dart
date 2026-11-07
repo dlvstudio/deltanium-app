@@ -38,6 +38,13 @@ class AppConstants {
   static const String appVersion = '1.0.0';
   static const String appBuildNumber = '1';
   static const String supportEmail = 'support@deltanium.com';
+
+  /// N-of-M: number of Store nodes to place each encrypted file on (full replicas).
+  /// Override with --dart-define=REPLICATION_FACTOR=1 for single-node local dev.
+  static const int replicationFactor = int.fromEnvironment(
+    'REPLICATION_FACTOR',
+    defaultValue: 2,
+  );
   
   // Animation Durations
   static const Duration shortAnimationDuration = Duration(milliseconds: 200);
