@@ -27,6 +27,7 @@
 - **Online mode**: Chỉ làm **presence registry** + **signaling server** cho WebRTC (trao đổi SDP/ICE)
 - **Offline mode**: Lưu **metadata tin nhắn** (conversationId, messageId, blockId, storeNodeId) để người nhận fetch khi online
 - **Không relay nội dung tin nhắn** trong cả hai chế độ
+- **Auth / IDOR (đã harden):** mọi endpoint chat dùng `SignatureAuthHelper`; đọc/ghi message chỉ cho participant; `SenderPubKey` lấy từ caller đã xác thực. Offline upload dùng N-of-M (`REPLICATION_FACTOR`) giống post/file.
 
 ### 2.3 Sơ đồ tổng thể
 

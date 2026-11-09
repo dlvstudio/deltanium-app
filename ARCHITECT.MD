@@ -106,13 +106,25 @@ lib/
 | **C-ABI / FFI** | `native/umbral_pre/` - bindings cho .NET và Flutter |
 | **Policy Tags** | `followers:YYYY` (epoch-based) |
 
-### 2.5 Deltanium User (.NET)
+### 2.5 Chat (1-1, E2E)
+
+| Chế độ | Cơ chế |
+|--------|--------|
+| **Online** | WebRTC P2P; Central = presence + signaling (`/api/chat/online*`, `/api/chat/signaling/*`) |
+| **Offline** | Mỗi tin = 1 file mã hóa trên Store; Central chỉ index metadata (`/api/chat/message`) |
+
+- Auth: `SignatureAuthHelper` (cùng format chữ ký như Policy/StoredFile)
+- IDOR: chỉ **participant** của conversation được đọc/ghi message; sender luôn = caller đã ký
+- Offline upload: App chọn N Store nodes (`REPLICATION_FACTOR`) qua `FileUploadService` (full replicas)
+- Chi tiết thiết kế: `CHAT.md`
+
+### 2.6 Deltanium User (.NET)
 
 - Thư viện client: CryptographyService, FileService, RequestSigner
 - Demo: upload/download, chia sẻ file, PRE Umbral
 - Dùng cho CLI/desktop workflows
 
-### 2.6 Deltanium Block Creator
+### 2.7 Deltanium Block Creator
 
 - MVP: Transaction pool, block creation, validation
 - Giao tiếp với Central Coordinator (deltanium.com)

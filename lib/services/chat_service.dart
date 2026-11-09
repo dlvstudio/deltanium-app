@@ -157,19 +157,25 @@ class ChatService {
       });
       final fileData = Uint8List.fromList(utf8.encode(payload));
 
-      // 2. Get a store node
+      // 2. Get store nodes and pick N-of-M replicas
       final nodeResp = await http.get(Uri.parse('$_apiBase/storenode/list'));
       if (nodeResp.statusCode != 200) {
         AppLogger.log('ChatService: Failed to get store nodes');
         return false;
       }
-      final nodes = jsonDecode(nodeResp.body) as List<dynamic>;
+      final nodes = (jsonDecode(nodeResp.body) as List<dynamic>)
+          .cast<Map<String, dynamic>>();
       if (nodes.isEmpty) {
         AppLogger.log('ChatService: No store nodes available');
         return false;
       }
-      final selectedNode = nodes.first as Map<String, dynamic>;
+      final selectedNodes = List<Map<String, dynamic>>.from(nodes)..shuffle();
+      final n = AppConstants.replicationFactor.clamp(1, selectedNodes.length);
+      final targets = selectedNodes.take(n).toList();
+      final selectedNode = targets.first;
+      final replicaNodes = targets.length > 1 ? targets.sublist(1) : <Map<String, dynamic>>[];
       final nodeEndpoint = (selectedNode['endpoint'] ?? selectedNode['Endpoint'] ?? '').toString();
+      AppLogger.log('ChatService: Using ${targets.length} store node(s) for offline message');
 
       // 3. Negotiate/Reuse Storage Contract (Chat Bundle)
       String? contractId = _conversationContracts[conversationId];
@@ -271,7 +277,7 @@ class ChatService {
         return false;
       }
 
-      // 4. Encrypt and upload using FileUploadService
+      // 4. Encrypt and upload using FileUploadService (N-of-M replicas)
       final uploader = FileUploadService();
       final result = await uploader.uploadEncryptedFile(
         fileData: fileData,
@@ -280,29 +286,39 @@ class ChatService {
         mnemonic: mnemonic,
         sharedWithUsers: [recipientPubKey],
         selectedNode: selectedNode,
+        replicaNodes: replicaNodes,
         fileType: 'chat_message',
         shareType: 'me',
-        contractId: contractId, // Pass the Bundle ID
+        contractId: contractId,
         onProgress: (msg) => AppLogger.log('ChatService upload: $msg'),
       );
 
       final fileId = result['fileId'] as String? ?? '';
       final firstBlockId = result['firstBlockId'] as String? ?? '';
       final recipientFileIds = result['recipientFileIds'] as Map<String, String>? ?? {};
+      final placedNodeIds = (result['storeNodeIds'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .where((e) => e.isNotEmpty)
+              .toList() ??
+          <String>[];
 
       // Find recipient's fileId from the map
       final normalizedRecipient = CryptoService.normalizePublicKey(recipientPubKey);
       final recipientFileId = recipientFileIds[normalizedRecipient] ?? '';
 
-      AppLogger.log('ChatService: Message uploaded, fileId=$fileId firstBlockId=$firstBlockId recipientFileId=$recipientFileId');
+      AppLogger.log(
+          'ChatService: Message uploaded, fileId=$fileId firstBlockId=$firstBlockId '
+          'recipientFileId=$recipientFileId replicas=${placedNodeIds.length}');
 
       if (fileId.isEmpty) {
         AppLogger.log('ChatService: Upload returned empty fileId');
         return false;
       }
 
-      // 5. Register message metadata with Central API
-      final storeNodeId = selectedNode['id']?.toString() ?? selectedNode['Id']?.toString() ?? '';
+      // 5. Register message metadata with Central API (primary placement id)
+      final storeNodeId = placedNodeIds.isNotEmpty
+          ? placedNodeIds.first
+          : (selectedNode['id']?.toString() ?? selectedNode['Id']?.toString() ?? '');
       final msgBody = jsonEncode({
         'conversationId': conversationId,
         'recipientPubKey': recipientPubKey,
