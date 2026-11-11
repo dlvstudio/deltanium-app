@@ -2,13 +2,22 @@
 
 A responsive, cross-platform social media application built with Flutter for the Deltanium blockchain network. This app provides a modern, Twitter-like interface for interacting with the decentralized Deltanium social network.
 
-![Deltanium App](https://via.placeholder.com/800x400?text=Deltanium+App)
+## Production
+
+| | URL |
+|--|-----|
+| **Web app** | [https://app.deltanium.com](https://app.deltanium.com) |
+| Landing | [https://deltanium.com](https://deltanium.com) |
+| Central API | [https://api.deltanium.com/api](https://api.deltanium.com/api) |
+| Store nodes | [store-1](https://store-1.deltanium.com) · [store-2](https://store-2.deltanium.com) |
+
+Local builds default to `CENTRAL_API_BASE=http://127.0.0.1:5002/api`. Production web builds use `https://api.deltanium.com/api`.
 
 ## Project Status
 
-**Current Phase**: Development / MVP (Not Production Ready)
+**Current Phase**: Live MVP (web at [app.deltanium.com](https://app.deltanium.com))
 
-The Deltanium ecosystem is currently a high-quality prototype demonstrating advanced features like Proxy Re-Encryption (PRE) and decentralized storage. However, several infrastructure components (Database persistence, P2P networking, Consensus) are in MVP stage.
+The Deltanium ecosystem demonstrates Proxy Re-Encryption (PRE), encrypted storage, and a social client. Some infrastructure (full P2P, consensus) remains roadmap work.
 
 See [BLOCKCHAIN_PLAN.md](BLOCKCHAIN_PLAN.md) for the detailed production readiness assessment and roadmap.
 
