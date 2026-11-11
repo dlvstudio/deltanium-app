@@ -118,13 +118,7 @@ lib/
 - Offline upload: App chọn N Store nodes (`REPLICATION_FACTOR`) qua `FileUploadService` (full replicas)
 - Chi tiết thiết kế: `CHAT.md`
 
-### 2.6 Deltanium User (.NET) — archived
-
-- Legacy CLI/demos (CryptographyService, FileService, RequestSigner, PRE Umbral)
-- Public repo archived: [deltanium-user](https://github.com/dlvstudio/deltanium-user)
-- End-user client is **deltanium-app** (Flutter)
-
-### 2.7 Deltanium Block Creator
+### 2.6 Deltanium Block Creator
 
 - MVP: Transaction pool, block creation, validation
 - Giao tiếp với Central Coordinator (deltanium.com)
