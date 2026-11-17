@@ -112,6 +112,8 @@ class _FollowingPostsScreenState extends State<FollowingPostsScreen> {
       final Map<String, List<PostMetadata>> postsByNode = {};
       var anySuccess = false;
       final List<String> errors = [];
+      // A post is replicated on several Stores: show it once.
+      final seenFileIds = <String>{};
 
       for (final node in storeNodes) {
         final nodeEndpoint = node['endpoint'] as String;
@@ -161,13 +163,14 @@ class _FollowingPostsScreenState extends State<FollowingPostsScreen> {
           for (final post in postsJson) {
             try {
               final postMetadata = PostMetadata.fromJson(post as Map<String, dynamic>);
+              if (seenFileIds.contains(postMetadata.fileId)) continue;
               final decryptedPost = await MyPostsScreen.tryDecryptPostStatic(
                 postMetadata,
                 nodeEndpoint,
                 _userMnemonic!,
                 currentUserPublicKey: _userPublicKey!,
               );
-              if (decryptedPost != null) {
+              if (decryptedPost != null && seenFileIds.add(postMetadata.fileId)) {
                 decryptedPosts.add(decryptedPost);
               }
             } catch (e) {

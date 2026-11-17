@@ -74,6 +74,8 @@ class _PublicPostsScreenState extends State<PublicPostsScreen> {
 
       final Map<String, List<PostMetadata>> postsByNode = {};
       final List<Map<String, dynamic>> storeNodes = [];
+      // A post is replicated on several Stores: show it once.
+      final seenFileIds = <String>{};
 
       // 2) Query each node for public feed
       for (final node in availableNodes) {
@@ -117,13 +119,14 @@ class _PublicPostsScreenState extends State<PublicPostsScreen> {
             try {
               final meta = PostMetadata.fromJson(post as Map<String, dynamic>);
               parsed++;
+              if (seenFileIds.contains(meta.fileId)) continue;
               final dec = await MyPostsScreen.tryDecryptPostStatic(
                 meta,
                 nodeEndpoint,
                 _userMnemonic!,
                 currentUserPublicKey: _userPublicKey!,
               );
-              if (dec != null && dec.encryptedType == 'public') {
+              if (dec != null && dec.encryptedType == 'public' && seenFileIds.add(meta.fileId)) {
                 publicPosts.add(dec);
                 decryptedCount++;
               }

@@ -840,6 +840,8 @@ class _MyPostsScreenState extends State<MyPostsScreen> {
       // Query all nodes for posts with parallel processing
       final totalNodesStartTime = _startTiming('Query All Nodes');
       final Map<String, List<PostMetadata>> postsByNode = {};
+      // A post is replicated on several Stores: show it once (first Store that decrypts it wins).
+      final seenFileIds = <String>{};
 
       for (int nodeIndex = 0; nodeIndex < _storeNodes.length; nodeIndex++) {
         final node = _storeNodes[nodeIndex];
@@ -932,7 +934,7 @@ class _MyPostsScreenState extends State<MyPostsScreen> {
                 AppLogger.log('  PostMetadata attachedMedia length: ${postMetadata.attachedMedia?.length ?? 0}');
                 AppLogger.log('🔍 END DEBUG POST PROCESSING');
                 
-                postMetadataList.add(postMetadata);
+                if (!seenFileIds.contains(postMetadata.fileId)) postMetadataList.add(postMetadata);
               } catch (e) {
                 AppLogger.log('Error creating PostMetadata: $e');
                 AppLogger.log('Post JSON that failed: $postJson');
@@ -984,7 +986,7 @@ class _MyPostsScreenState extends State<MyPostsScreen> {
               // Add successful decryptions to nodePosts
               for (int i = 0; i < batchResults.length; i++) {
                 final result = batchResults[i];
-                if (result != null) {
+                if (result != null && seenFileIds.add(batch[i].fileId)) {
                   nodePosts.add(result);
                   AppLogger.log('✅ Successfully decrypted post: ${batch[i].fileId}');
                 } else {

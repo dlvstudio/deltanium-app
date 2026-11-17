@@ -65,6 +65,8 @@ class FollowingFeedService {
       AppLogger.log('🗂️ Found ${nodeEndpoints.length} store nodes');
 
       List<FollowingPost> allPosts = [];
+      // A post is replicated on several Stores: show it once.
+      final seenFileIds = <String>{};
       for (final endpoint in nodeEndpoints) {
         try {
           final timestamp = (DateTime.now().millisecondsSinceEpoch / 1000).floor().toString();
@@ -96,6 +98,8 @@ class FollowingFeedService {
           // Giải mã từng post (giống My posts)
           for (final post in posts) {
             try {
+              final fid = (post['fileId'] ?? post['FileId'])?.toString() ?? '';
+              if (fid.isNotEmpty && seenFileIds.contains(fid)) continue;
               // Prefer explicit owner/author keys. If PRE post lacks them, derive pkA from PRE bundle.
               String authorPk = (post['ownerPubKey'] ?? post['authorPublicKey'] ?? '') as String? ?? '';
               final capsuleFor = (post['capsuleFor'] ?? post['CapsuleFor']) as String?;
@@ -123,7 +127,7 @@ class FollowingFeedService {
                 joinDate: DateTime.now(),
               );
               final postObj = await _loadPostContent(post, currentUserPubKey, mnemonic, authorInfo, endpoint);
-              if (postObj != null) allPosts.add(postObj);
+              if (postObj != null && (fid.isEmpty || seenFileIds.add(fid))) allPosts.add(postObj);
             } catch (e) {
               AppLogger.log('❌ Error loading post content: $e');
             }
