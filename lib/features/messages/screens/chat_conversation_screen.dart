@@ -306,6 +306,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       costPerDay: (storageInfo['estimatedCostPerDay'] as num?)?.toDouble() ?? 0.0,
       estimatedSizeBytes: storageInfo['estimatedSize'] as int? ?? 0,
       feeBasis: storageInfo['feeBasis'] as String? ?? 'Storage fee calculated by node',
+      itemLabel: 'message',
+      reservedBundle: true,
       onConfirm: () => completer.complete(true),
       onCancel: () => completer.complete(false),
     );

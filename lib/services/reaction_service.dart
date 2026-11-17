@@ -5,6 +5,7 @@ import 'package:deltanium_app/services/crypto_service.dart';
 import 'package:deltanium_app/services/file_crypto_service.dart';
 import 'package:deltanium_app/services/request_signer.dart';
 import 'package:deltanium_app/services/storage_contract_service.dart';
+import 'package:deltanium_app/services/wallet_service.dart';
 import 'package:http/http.dart' as http;
 
 class ReactionService {
@@ -93,6 +94,18 @@ class ReactionService {
           },
         );
         // Store submits StorageOperation to blockchain via contract
+        if (blockOk) {
+          // Count it toward free storage (social items are never charged). Best effort, off the UI path.
+          WalletService.registerStorageAt(
+            nodeEndpoint: nodeEndpoint,
+            fileId: effectiveFileId,
+            sizeBytes: utf8.encode(json.encode(metadata)).length + utf8.encode(json.encode(block0)).length,
+            social: true,
+            blocks: WalletService.blockHashes([
+              {'blockId': effectiveFirstBlockId, 'blockIndex': 0, 'encryptedContent': utf8.encode(json.encode(block0))},
+            ]),
+          ).ignore();
+        }
         return blockOk;
       }
 
@@ -185,6 +198,13 @@ class ReactionService {
       }
 
       // Store submits StorageOperation to blockchain via contract
+      WalletService.registerStorageAt(
+        nodeEndpoint: nodeEndpoint,
+        fileId: metadataEntries.first['fileId'] as String,
+        sizeBytes: WalletService.storedBytes(metadataEntries, blocks),
+        social: true,
+        blocks: WalletService.blockHashes(blocks),
+      ).ignore();
       return true;
     } catch (e) {
       AppLogger.log('ReactionService error: $e');

@@ -9,7 +9,7 @@ import 'package:deltanium_app/services/app_logger.dart';
 /// Service for managing storage contracts and operations
 /// Handles contract creation, signing, and storage file uploads
 class StorageContractService {
-  final String storeBaseUrl; // e.g., "http://localhost:5001"
+  final String storeBaseUrl; // Store node base URL from Central API registry
   final RequestSigner _signer;
 
   StorageContractService({

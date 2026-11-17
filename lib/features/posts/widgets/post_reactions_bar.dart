@@ -5,6 +5,7 @@ import 'package:deltanium_app/features/posts/screens/my_posts_screen.dart';
 import 'package:deltanium_app/services/reaction_service.dart';
 import 'package:deltanium_app/services/app_logger.dart';
 import 'package:deltanium_app/widgets/confirm_storage_cost_dialog.dart';
+import 'package:deltanium_app/widgets/creator_support.dart';
 
 class PostReactionsBar extends StatefulWidget {
   final PostMetadata post;
@@ -89,6 +90,32 @@ class _PostReactionsBarState extends State<PostReactionsBar> {
 
   @override
   Widget build(BuildContext context) {
+    final owner = widget.post.ownerPubKey;
+    final canTip = owner != null && owner.isNotEmpty && owner != widget.userPublicKey;
+    if (!canTip) return _buildReactions(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildReactions(context),
+        const SizedBox(width: 8),
+        // TOKENOMICS_V2 §9: tip the author (90% to the creator).
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          tooltip: 'Tip author',
+          icon: Icon(
+            Icons.volunteer_activism_outlined,
+            size: 18,
+            color: widget.isDarkMode
+                ? DeltaniumTheme.darkTextSecondaryColor
+                : DeltaniumTheme.lightTextSecondaryColor,
+          ),
+          onPressed: () => CreatorSupport.showTipDialog(context, toPublicKey: owner, postId: widget.post.fileId),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildReactions(BuildContext context) {
     // Get all reactions with count > 0, sorted by count (descending)
     final activeReactions = _getActiveReactions();
     
@@ -296,6 +323,7 @@ class _PostReactionsBarState extends State<PostReactionsBar> {
         costPerDay: (storageInfo['estimatedCostPerDay'] as num?)?.toDouble() ?? 0.0,
         estimatedSizeBytes: storageInfo['estimatedSize'] as int? ?? 500,
         feeBasis: storageInfo['feeBasis'] as String? ?? 'Reaction storage fee',
+        itemLabel: 'reaction',
         onConfirm: () => completer.complete(true),
         onCancel: () => completer.complete(false),
       );

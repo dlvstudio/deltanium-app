@@ -13,6 +13,7 @@ import 'dart:typed_data';
 import 'dart:io';
 import 'dart:async';
 import 'package:http/http.dart' as http;
+import 'package:deltanium_app/services/egress_receipt_service.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 class PostCommentsSection extends StatefulWidget {
@@ -189,7 +190,7 @@ class _PostCommentsSectionState extends State<PostCommentsSection> {
       final dataToSign = '$method$blockPath$timestamp$bodyHash';
       final signature = await CryptoService.sign(dataToSign, widget.userMnemonic!);
 
-      final response = await http.get(
+      final response = await BlockHttp.get(
         Uri.parse('${widget.nodeEndpoint}$blockPath'),
         headers: {
           'X-User-PubKey': CryptoService.normalizePublicKey(widget.userPublicKey!),
@@ -259,7 +260,7 @@ class _PostCommentsSectionState extends State<PostCommentsSection> {
           final contentDataToSign = '$contentMethod$contentBlockPath$contentTimestamp$contentBodyHash';
           final contentSignature = await CryptoService.sign(contentDataToSign, widget.userMnemonic!);
 
-          final contentResponse = await http.get(
+          final contentResponse = await BlockHttp.get(
             Uri.parse('${widget.nodeEndpoint}$contentBlockPath'),
             headers: {
               'X-User-PubKey': CryptoService.normalizePublicKey(widget.userPublicKey!),
@@ -353,6 +354,7 @@ class _PostCommentsSectionState extends State<PostCommentsSection> {
           costPerDay: (storageInfo['estimatedCostPerDay'] as num?)?.toDouble() ?? 0.0,
           estimatedSizeBytes: storageInfo['estimatedSize'] as int? ?? 500,
           feeBasis: storageInfo['feeBasis'] as String? ?? 'Comment storage fee',
+          itemLabel: 'comment',
           onConfirm: () => completer.complete(true),
           onCancel: () => completer.complete(false),
         );

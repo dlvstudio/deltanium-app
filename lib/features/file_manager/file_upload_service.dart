@@ -10,6 +10,7 @@ import 'package:deltanium_app/config/constants.dart';
 import 'package:deltanium_app/services/crypto_service.dart';
 import 'package:deltanium_app/services/file_crypto_service.dart';
 import 'package:deltanium_app/services/app_logger.dart';
+import 'package:deltanium_app/services/wallet_service.dart';
 
 // Removed pointycastle import - using WebCrypto for consistency
 
@@ -39,6 +40,9 @@ class FileUploadService {
     String? policyScheme,
     String? parentFileId, // 🆕 Parent file ID (for comment media, etc.)
     String? contractId, // 🆕 Storage Contract ID for blockchain integration
+    int storageMonths = 12, // TOKENOMICS_V2 §6: prepaid storage term
+    String storageContractType = 'TimeFixed', // or 'AutoRenew'
+    bool socialItem = false, // §10: chat messages etc. are never charged to the wallet
   }) async {
     try {
       // Step 1: Initial setup
@@ -154,6 +158,33 @@ class FileUploadService {
         targetNodes.removeLast();
       }
 
+      // TOKENOMICS_V2 §6/§10: price the storage before uploading anything; stop early if unaffordable.
+      final quoteResp = await WalletService.quoteStorage(
+        sizeBytes: fileData.length,
+        replicas: targetNodes.length,
+        months: storageMonths,
+        owner: CryptoService.normalizePublicKey(publicKey),
+      );
+      final quote = quoteResp?['quote'] as Map<String, dynamic>?;
+      if (quoteResp?['enforceFees'] == true && quote != null && quote['freeTier'] != true) {
+        final total = (quote['totalFee'] as num?)?.toDouble() ?? 0;
+        final balance = await WalletService.getBalance() ?? 0;
+        if (balance < total) {
+          throw Exception('Storage costs ${total.toStringAsFixed(0)} D but your balance is '
+              '${balance.toStringAsFixed(0)} D. Top up your wallet first.');
+        }
+      }
+
+      // Block hashes let Central run proof-of-storage challenges against each Store.
+      final blockHashes = blocks.map((b) {
+        final m = b as Map<String, dynamic>;
+        return <String, Object>{
+          'blockId': m['blockId'] as String,
+          'sha256': sha256.convert(m['encryptedContent'] as Uint8List).toString(),
+          'blockIndex': (m['blockIndex'] as num?)?.toInt() ?? -1,
+        };
+      }).toList();
+
       var blockchainSubmitted = true;
       final List<String> blockchainSubmitErrors = [];
       final List<String> placedNodeIds = [];
@@ -237,15 +268,24 @@ class FileUploadService {
       }
 
       onProgress?.call('Finalizing...');
+      Map<String, dynamic>? storage;
       if (placedNodeIds.isNotEmpty) {
-        await _registerReplicasWithAPI(
+        final reg = await _registerReplicasWithAPI(
           fileId: fileId,
           publicKey: publicKey,
           mnemonic: mnemonic,
           storeNodeIds: placedNodeIds,
           fileSize: fileData.length,
           fileHash: fileHash ?? '',
+          months: storageMonths,
+          contractType: storageContractType,
+          blocks: blockHashes,
+          social: socialItem,
         );
+        if (reg['status'] == 402) {
+          throw Exception('Storage fee not paid: ${reg['error']}');
+        }
+        storage = reg['storage'] as Map<String, dynamic>?;
       }
       
       onProgress?.call('Upload completed!');
@@ -279,6 +319,7 @@ class FileUploadService {
         'replicationFactor': placedNodeIds.length,
         'blockchainSubmitted': blockchainSubmitted,
         'blockchainSubmitErrors': blockchainSubmitErrors,
+        'storage': storage,
       };
     } catch (e) {
       AppLogger.log('Error in encrypted file upload: $e');
@@ -493,13 +534,17 @@ class FileUploadService {
   }
   
   /// Register N-of-M placements with Central (signed).
-  Future<void> _registerReplicasWithAPI({
+  Future<Map<String, dynamic>> _registerReplicasWithAPI({
     required String fileId,
     required String publicKey,
     required String mnemonic,
     required List<String> storeNodeIds,
     required int fileSize,
     required String fileHash,
+    int months = 12,
+    String contractType = 'TimeFixed',
+    List<Map<String, Object>> blocks = const [],
+    bool social = false,
   }) async {
     try {
       final bodyMap = {
@@ -508,6 +553,10 @@ class FileUploadService {
         'storeNodeIds': storeNodeIds,
         'fileSize': fileSize,
         'fileHash': fileHash,
+        'months': months,
+        'contractType': contractType,
+        'blocks': blocks,
+        if (social) 'kind': 'social',
       };
       final body = json.encode(bodyMap);
       final path = '/api/storedfile/register-replicas';
@@ -535,11 +584,19 @@ class FileUploadService {
 
       if (response.statusCode != 200) {
         AppLogger.log('Warning: Failed to register replicas: ${response.statusCode} ${response.body}');
-      } else {
-        AppLogger.log('Replicas registered: ${response.body}');
+        String error = response.body;
+        try {
+          final decoded = json.decode(response.body);
+          if (decoded is Map && decoded['error'] != null) error = decoded['error'].toString();
+        } catch (_) {}
+        return {'ok': false, 'status': response.statusCode, 'error': error};
       }
+      AppLogger.log('Replicas registered: ${response.body}');
+      final decoded = json.decode(response.body) as Map<String, dynamic>;
+      return {'ok': true, 'status': 200, 'storage': decoded['storage']};
     } catch (e) {
       AppLogger.log('Warning: Error registering replicas: $e');
+      return {'ok': false, 'status': 0, 'error': e.toString()};
     }
   }
   

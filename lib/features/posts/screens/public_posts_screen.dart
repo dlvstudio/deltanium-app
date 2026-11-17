@@ -8,6 +8,7 @@ import 'package:deltanium_app/services/crypto_service.dart';
 import 'package:deltanium_app/features/posts/screens/my_posts_screen.dart';
 import 'package:deltanium_app/features/posts/widgets/optimized_post_list.dart';
 import 'package:deltanium_app/services/app_logger.dart';
+import 'package:deltanium_app/services/store_node_directory.dart';
 
 
 class PublicPostsScreen extends StatefulWidget {
@@ -68,19 +69,15 @@ class _PublicPostsScreenState extends State<PublicPostsScreen> {
 
     try {
       // 1) Fetch store nodes from Central API
-      final nodesResp = await http.get(Uri.parse('${AppConstants.apiBaseUrl}/storenode/list'));
-      if (nodesResp.statusCode != 200) {
-        throw Exception('Failed to fetch store nodes');
-      }
-      final List<dynamic> nodesJson = json.decode(nodesResp.body);
-      final List<String> nodeEndpoints = nodesJson.map<String>((n) => n['endpoint'] as String).toList();
-      AppLogger.log('🗂️ Public feed: found ' + nodeEndpoints.length.toString() + ' store nodes');
+      final availableNodes = await StoreNodeDirectory.listNodes();
+      AppLogger.log('🗂️ Public feed: found ${availableNodes.length} store nodes');
 
       final Map<String, List<PostMetadata>> postsByNode = {};
       final List<Map<String, dynamic>> storeNodes = [];
 
       // 2) Query each node for public feed
-      for (final nodeEndpoint in nodeEndpoints) {
+      for (final node in availableNodes) {
+        final nodeEndpoint = node['endpoint'] as String;
         try {
           final timestamp = (DateTime.now().millisecondsSinceEpoch / 1000).floor().toString();
           const method = 'GET';
@@ -88,8 +85,8 @@ class _PublicPostsScreenState extends State<PublicPostsScreen> {
           const bodyHash = '';
           final dataToSign = '$method$path$timestamp$bodyHash';
           final signature = await CryptoService.sign(dataToSign, _userMnemonic!);
-          final _httpStart = DateTime.now();
-          AppLogger.log('🌐 HTTP GET ' + '$nodeEndpoint$path' + ' START ' + _httpStart.toIso8601String());
+          final httpStart = DateTime.now();
+          AppLogger.log('🌐 HTTP GET $nodeEndpoint$path START ${httpStart.toIso8601String()}');
           final response = await http.get(
             Uri.parse('$nodeEndpoint$path'),
             headers: {
@@ -98,10 +95,13 @@ class _PublicPostsScreenState extends State<PublicPostsScreen> {
               'X-Signature': signature,
             },
           );
-          AppLogger.log('🌐 HTTP GET ' + '$nodeEndpoint$path' + ' END ' + DateTime.now().toIso8601String() + ' (' + DateTime.now().difference(_httpStart).inMilliseconds.toString() + 'ms) code=' + response.statusCode.toString());
+          AppLogger.log(
+            '🌐 HTTP GET $nodeEndpoint$path END ${DateTime.now().toIso8601String()} '
+            '(${DateTime.now().difference(httpStart).inMilliseconds}ms) code=${response.statusCode}',
+          );
           if (response.statusCode != 200) continue;
           final responseBody = json.decode(response.body);
-          AppLogger.log('📝 public-feed raw (' + nodeEndpoint + '): ' + responseBody.toString());
+          AppLogger.log('📝 public-feed raw ($nodeEndpoint): $responseBody');
           List<dynamic> postsJson;
           if (responseBody is Map<String, dynamic> && responseBody.containsKey('posts')) {
             postsJson = responseBody['posts'] as List<dynamic>;
@@ -131,7 +131,7 @@ class _PublicPostsScreenState extends State<PublicPostsScreen> {
           }
           AppLogger.log('✅ node ' + nodeEndpoint + ': parsed=' + parsed.toString() + ', decryptedPublic=' + decryptedCount.toString());
           if (publicPosts.isNotEmpty) {
-            final nodeId = 'node_' + storeNodes.length.toString();
+            final nodeId = (node['id'] as String?) ?? 'node_${storeNodes.length}';
             storeNodes.add({'id': nodeId, 'endpoint': nodeEndpoint});
             postsByNode[nodeId] = publicPosts;
           }

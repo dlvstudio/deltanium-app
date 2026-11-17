@@ -1,10 +1,12 @@
-import 'package:flutter/material.dart';
+import 'package:deltanium_app/config/brand.dart';
 import 'package:deltanium_app/config/theme.dart';
-import 'package:deltanium_app/services/crypto_service.dart';
 import 'package:deltanium_app/features/feed/widgets/related_files_widget.dart';
 import 'package:deltanium_app/features/posts/screens/my_posts_screen.dart';
-import 'package:deltanium_app/features/posts/widgets/post_reactions_bar.dart';
 import 'package:deltanium_app/features/posts/widgets/post_comments_section.dart';
+import 'package:deltanium_app/features/posts/widgets/post_reactions_bar.dart';
+import 'package:deltanium_app/services/crypto_service.dart';
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 // 🚀 OPTIMIZED: Separate widget to prevent unnecessary rebuilds during scrolling
 class OptimizedPostCard extends StatelessWidget {
@@ -32,24 +34,28 @@ class OptimizedPostCard extends StatelessWidget {
     // If post is decrypted and has content, show as a proper post
     if (post.isDecrypted && post.textContent != null) {
       return RepaintBoundary(
-        child: Card(
-          elevation: 1,
-          margin: const EdgeInsets.only(bottom: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+        child: Container(
+          margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          decoration: BoxDecoration(
+            color: Brand.panel,
+            borderRadius: BorderRadius.circular(Brand.radius + 6),
+            border: Border.all(color: Brand.line),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Post header with user info
                 Row(
                   children: [
                     CircleAvatar(
                       radius: 20,
-                      backgroundColor: isDarkMode ? DeltaniumTheme.primaryTan : DeltaniumTheme.primaryBrown,
-                      child: const Icon(Icons.person, color: Colors.white, size: 20),
+                      backgroundColor: Brand.sand.withValues(alpha: 0.18),
+                      child: Icon(
+                        Icons.person_rounded,
+                        color: Brand.sand,
+                        size: 20,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -58,108 +64,56 @@ class OptimizedPostCard extends StatelessWidget {
                         children: [
                           Text(
                             _displayAuthorName(post),
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                              color: isDarkMode
-                                  ? DeltaniumTheme.darkTextPrimaryColor
-                                  : DeltaniumTheme.lightTextPrimaryColor,
+                            style: GoogleFonts.manrope(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15,
+                              color: Brand.text,
                             ),
                           ),
                           Text(
                             _formatDate(post.creationTime),
-                            style: TextStyle(
+                            style: GoogleFonts.manrope(
                               fontSize: 12,
-                              color: isDarkMode
-                                  ? DeltaniumTheme.darkTextSecondaryColor
-                                  : DeltaniumTheme.lightTextSecondaryColor,
+                              color: Brand.muted,
                             ),
                           ),
                         ],
                       ),
                     ),
-                    // Show post privacy and ownership status with two separate tags
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // First tag: Privacy Status (PUBLIC/ENCRYPTED)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: (post.encryptedType == 'public')
-                                ? Colors.green // Public post
-                                : Colors.red, // Encrypted post
-                            borderRadius: BorderRadius.circular(12),
+                    Flexible(
+                      child: Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        alignment: WrapAlignment.end,
+                        children: [
+                          _statusChip(
+                            label: post.encryptedType == 'public' ? 'Public' : 'Encrypted',
+                            icon: post.encryptedType == 'public'
+                                ? Icons.public_rounded
+                                : Icons.lock_rounded,
+                            accent: post.encryptedType == 'public'
+                                ? Brand.moss
+                                : Brand.danger,
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                (post.encryptedType == 'public')
-                                    ? Icons.public // Public post icon
-                                    : Icons.lock, // Encrypted post icon
-                                size: 12,
-                                color: Colors.white,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                (post.encryptedType == 'public')
-                                    ? 'PUBLIC'
-                                    : 'ENCRYPTED',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
+                          _statusChip(
+                            label: _isPostShared(post) ? 'Shared' : 'Yours',
+                            icon: _isPostShared(post)
+                                ? Icons.share_rounded
+                                : Icons.person_rounded,
+                            accent: Brand.sand,
                           ),
-                        ),
-                        
-                        const SizedBox(width: 8),
-                        
-                        // Second tag: Ownership Status (MY POST/SHARED WITH ME)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: _isPostShared(post) ? Colors.blue : Colors.orange,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                _isPostShared(post) ? Icons.share : Icons.person,
-                                size: 12,
-                                color: Colors.white,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                _isPostShared(post) ? 'SHARED WITH ME' : 'MY POST',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ],
                 ),
-                
-                // Post content
                 const SizedBox(height: 12),
                 Text(
                   post.textContent!,
-                  style: TextStyle(
-                    fontSize: 16,
-                    height: 1.4,
-                    color: isDarkMode
-                        ? DeltaniumTheme.darkTextPrimaryColor
-                        : DeltaniumTheme.lightTextPrimaryColor,
+                  style: GoogleFonts.manrope(
+                    fontSize: 15,
+                    height: 1.5,
+                    color: Brand.text,
                   ),
                 ),
                 
@@ -177,32 +131,34 @@ class OptimizedPostCard extends StatelessWidget {
                   ),
                 ],
                 
-                // Tags (hashtags from post content)
                 if (post.tags != null && post.tags!.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   Wrap(
                     spacing: 6,
                     runSpacing: 6,
-                    children: post.tags!.map((tag) => Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: isDarkMode ? DeltaniumTheme.primaryTan : DeltaniumTheme.primaryBrown,
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Text(
-                        tag,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    )).toList(),
+                    children: post.tags!
+                        .map(
+                          (tag) => Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Brand.sand.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(Brand.radius),
+                              border: Border.all(color: Brand.line),
+                            ),
+                            child: Text(
+                              tag,
+                              style: GoogleFonts.manrope(
+                                color: Brand.sand,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(),
                   ),
                 ],
-                
-                // Post actions (like, comment, share)  
-                const SizedBox(height: 16),
+                const SizedBox(height: 14),
                 Row(
                   children: [
                     PostReactionsBar(
@@ -217,19 +173,14 @@ class OptimizedPostCard extends StatelessWidget {
                     const Spacer(),
                     Text(
                       'ID: ${post.fileId.substring(0, 8)}...',
-                      style: TextStyle(
+                      style: GoogleFonts.manrope(
                         fontSize: 10,
-                        fontFamily: 'monospace',
-                        color: isDarkMode
-                            ? DeltaniumTheme.darkTextSecondaryColor
-                            : DeltaniumTheme.lightTextSecondaryColor,
+                        color: Brand.muted,
                       ),
                     ),
                   ],
                 ),
-                
-                // Comments section
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 PostCommentsSection(
                   post: post,
                   nodeEndpoint: nodeEndpoint,
@@ -243,78 +194,86 @@ class OptimizedPostCard extends StatelessWidget {
         ),
       );
     }
-    
-    // Fallback for encrypted posts
+
     return RepaintBoundary(
-      child: Card(
-        elevation: 1,
-        margin: const EdgeInsets.only(bottom: 12),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Brand.panel,
+          borderRadius: BorderRadius.circular(Brand.radius + 6),
+          border: Border.all(color: Brand.line),
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.lock,
-                    size: 24,
-                    color: Colors.orange,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Encrypted Post',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.lock_rounded, size: 22, color: Brand.danger),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Encrypted post',
+                        style: GoogleFonts.manrope(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                          color: Brand.text,
                         ),
-                        Text(
-                          'Created ${_formatDate(post.creationTime)}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: isDarkMode
-                                ? DeltaniumTheme.darkTextSecondaryColor
-                                : DeltaniumTheme.lightTextSecondaryColor,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                      Text(
+                        'Created ${_formatDate(post.creationTime)}',
+                        style: GoogleFonts.manrope(fontSize: 12, color: Brand.muted),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Unable to decrypt post content. This may be due to encryption key issues.',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontStyle: FontStyle.italic,
-                  color: isDarkMode
-                      ? DeltaniumTheme.darkTextSecondaryColor
-                      : DeltaniumTheme.lightTextSecondaryColor,
                 ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Unable to decrypt this post. You may not have access, or the key material is missing.',
+              style: GoogleFonts.manrope(
+                fontSize: 13,
+                height: 1.45,
+                color: Brand.muted,
               ),
-              const SizedBox(height: 8),
-              Text(
-                'ID: ${post.fileId.substring(0, 8)}...',
-                style: TextStyle(
-                  fontSize: 10,
-                  fontFamily: 'monospace',
-                  color: isDarkMode
-                      ? DeltaniumTheme.darkTextSecondaryColor
-                      : DeltaniumTheme.lightTextSecondaryColor,
-                ),
-              ),
-            ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _statusChip({
+    required String label,
+    required IconData icon,
+    required Color accent,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(Brand.radius),
+        border: Border.all(color: accent.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: accent),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: GoogleFonts.manrope(
+              color: accent,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.2,
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

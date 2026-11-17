@@ -10,6 +10,7 @@ import 'package:deltanium_app/features/file_manager/file_upload_service.dart';
 import 'package:deltanium_app/services/auth_service.dart';
 import 'package:deltanium_app/config/theme.dart';
 import 'package:deltanium_app/services/app_logger.dart';
+import 'package:deltanium_app/services/store_node_directory.dart';
 
 
 class SecureFileUploadScreen extends StatefulWidget {
@@ -70,24 +71,11 @@ class _SecureFileUploadScreenState extends State<SecureFileUploadScreen> {
     });
     
     try {
-      final response = await http.get(
-        Uri.parse('${AppConstants.apiBaseUrl}/storenode/list'),
-        headers: {'Content-Type': 'application/json'},
-      );
-      
-      if (response.statusCode == 200) {
-        final List<dynamic> nodes = json.decode(response.body);
-        setState(() {
-          _availableNodes = nodes.cast<Map<String, dynamic>>();
-          if (_availableNodes.isNotEmpty) {
-            _selectedNode = _availableNodes.first;
-          }
-        });
-      } else {
-        setState(() {
-          _errorMessage = 'Failed to load storage nodes: ${response.statusCode}';
-        });
-      }
+      final nodes = await StoreNodeDirectory.listNodes();
+      setState(() {
+        _availableNodes = nodes;
+        _selectedNode = _availableNodes.first;
+      });
     } catch (e) {
       setState(() {
         _errorMessage = 'Error loading storage nodes: $e';

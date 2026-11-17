@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:deltanium_app/config/constants.dart';
 import 'package:deltanium_app/services/app_logger.dart';
 import 'package:deltanium_app/services/crypto_service.dart';
+import 'package:deltanium_app/services/store_node_directory.dart';
 import 'package:uuid/uuid.dart';
 
 class BlockchainTxService {
@@ -77,10 +78,14 @@ class BlockchainTxService {
         return null;
       }
       final list = jsonDecode(resp.body) as List<dynamic>;
-      if (list.isEmpty) return null;
-      final choice = list[Random().nextInt(list.length)] as Map<String, dynamic>;
-      final endpoint = choice['endpoint']?.toString() ?? choice['Endpoint']?.toString();
-      return endpoint;
+      final endpoints = list
+          .map((item) => StoreNodeDirectory.sanitizeEndpoint(
+                (item as Map)['endpoint']?.toString() ?? item['Endpoint']?.toString(),
+              ))
+          .whereType<String>()
+          .toList();
+      if (endpoints.isEmpty) return null;
+      return endpoints[Random().nextInt(endpoints.length)];
     } catch (e) {
       AppLogger.log('BlockchainTxService: blocker list error: $e');
       return null;

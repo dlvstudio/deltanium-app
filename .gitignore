@@ -45,10 +45,3 @@ app.*.map.json
 
 # App logs
 /appLogs/
-
-flutter_*.log
-
-# Native PRE artifacts copied into bundles
-*.dylib
-!ios/**/*.dylib
-

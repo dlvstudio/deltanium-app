@@ -14,6 +14,7 @@ import 'crypto_web_signer.dart';
 import 'package:asn1lib/asn1lib.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:deltanium_app/services/app_logger.dart';
+import 'package:deltanium_app/config/network.dart';
 
 
 // Web signer is conditionally provided by crypto_web_signer.dart
@@ -41,7 +42,9 @@ class CryptoService {
   }
 
   // Ký dữ liệu (hash SHA256) bằng ECDSA/secp256k1, trả về signature dạng base64 (tự động chọn web hoặc native)
-  static Future<String> sign(String data, dynamic keyOrMnemonic) async {
+  // The message is scoped to the build's network first (see Network.scope).
+  static Future<String> sign(String message, dynamic keyOrMnemonic) async {
+    final data = Network.scope(message);
     final start = DateTime.now();
     if (kIsWeb) {
       final sig = await signWeb(data, keyOrMnemonic as String);

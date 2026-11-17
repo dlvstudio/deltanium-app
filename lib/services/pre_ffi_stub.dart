@@ -4,6 +4,9 @@ import 'dart:typed_data';
 class PreFfi {
   PreFfi._();
 
+  /// False on web / platforms without dart:ffi Umbral bindings.
+  static bool get isSupported => false;
+
   static PreFfi? _instance;
   static PreFfi instance() {
     _instance ??= PreFfi._();
@@ -13,8 +16,8 @@ class PreFfi {
   Never _unsupported() =>
       throw UnsupportedError(
         'Umbral PRE (dart:ffi) is not available on this platform. '
-        'Use iOS/Android/desktop for follower-encrypted posts; '
-        'public posts and chat still work on web.',
+        'Follower-encrypted posts are temporarily unavailable on web; '
+        'use iOS/Android/desktop, or post as Public / Me.',
       );
 
   Uint8List encapsulateWithTag({

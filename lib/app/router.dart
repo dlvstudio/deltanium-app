@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:deltanium_app/screens/login/login_screen.dart';
-import 'package:deltanium_app/screens/home/home_screen.dart';
 import 'package:deltanium_app/features/profile/screens/profile_screen.dart';
+import 'package:deltanium_app/services/user_service.dart';
 import 'package:deltanium_app/features/profile/screens/local_user_profile_screen.dart';
 import 'package:deltanium_app/features/settings/screens/settings_screen.dart';
 import 'package:deltanium_app/features/search/screens/search_screen.dart';
@@ -16,9 +16,6 @@ import 'package:deltanium_app/features/landing/screens/landing_screen.dart';
 import 'package:deltanium_app/models/user_profile.dart';
 import 'package:deltanium_app/data/mock/mock_data.dart';
 import 'package:deltanium_app/services/auth_service.dart';
-import 'package:deltanium_app/config/constants.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:deltanium_app/services/app_logger.dart';
 
 
@@ -91,11 +88,9 @@ Future<UserProfile?> _getCurrentUserProfile() async {
       // Fetch latest profile from Central API to populate fullName/dateOfBirth/avatarUrl
       try {
         final pubKey = currentUser['publicKey'] ?? '';
-        final resp = await http.get(Uri.parse('${AppConstants.apiBaseUrl}/user/profile/$pubKey'));
-        if (resp.statusCode == 200) {
-          final data = json.decode(resp.body) as Map<String, dynamic>;
-          return UserProfile.fromJson(data);
-        }
+        // Signed by the owner, so Central includes the private fields (email, date of birth).
+        final profile = await UserService().getUserProfile(pubKey);
+        if (profile != null) return profile;
       } catch (_) {}
       // Fallback to minimal local info
       return UserProfile(
@@ -174,7 +169,8 @@ Future<GoRouter> configureRouter() async {
       GoRoute(
         path: AppRoutes.home,
         name: 'home',
-        builder: (context, state) => const HomeScreen(child: Placeholder()),
+        // Legacy /home → same feed shell (no nested HomeScreen wrapper)
+        redirect: (context, state) => AppRoutes.localUserHome,
       ),
       
       // Local user home route
@@ -184,7 +180,7 @@ Future<GoRouter> configureRouter() async {
         builder: (context, state) {
           final extra = state.extra;
           if (extra is UserProfile) {
-            return HomeScreen(child: LocalUserHomeScreen(userProfile: extra));
+            return LocalUserHomeScreen(userProfile: extra);
           }
           
           // Use FutureBuilder to get current user profile
@@ -198,7 +194,7 @@ Future<GoRouter> configureRouter() async {
               }
               
               if (snapshot.hasData && snapshot.data != null) {
-                return HomeScreen(child: LocalUserHomeScreen(userProfile: snapshot.data!));
+                return LocalUserHomeScreen(userProfile: snapshot.data!);
               }
               
               // This should not happen since redirect should have caught it

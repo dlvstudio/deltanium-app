@@ -18,9 +18,12 @@ import 'package:deltanium_app/services/post_service.dart';
 import 'package:deltanium_app/services/pre_service.dart';
 import 'package:deltanium_app/config/constants.dart';
 import 'package:deltanium_app/services/app_logger.dart';
+import 'package:deltanium_app/services/wallet_service.dart';
 import 'package:deltanium_app/widgets/confirm_storage_cost_dialog.dart';
 import 'package:deltanium_app/services/storage_contract_service.dart';
 import 'package:deltanium_app/services/request_signer.dart';
+import 'package:deltanium_app/services/store_node_directory.dart';
+import 'package:deltanium_app/services/pre_ffi.dart';
 
 // import 'package:deltanium_app/services/user_discovery_service.dart';
 
@@ -56,13 +59,19 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   String? _userMnemonic;
   
   // Thêm enum và biến trạng thái
-  String _shareType = 'followers'; // default to followers
-  // 🆕 Followers sharing mode: Option 1 (per-recipient) vs Option 2 (PRE-tag)
-  bool _followersUsePre = true; // default to Option 2 (PRE)
+  // Web: followers posts need Umbral PRE (dart:ffi) — not available yet.
+  String _shareType = PreFfi.isSupported ? 'followers' : 'public';
+  // Option 2 PRE-tag (native only). Web must not create followers posts for now.
+  bool _followersUsePre = true;
+  // TOKENOMICS_V2 §9: subscribers-only posts use the `subscribers:YYYY-MM` PRE tag.
+  bool _subscribersOnly = false;
+  String get _preTag => _subscribersOnly
+      ? WalletService.currentSubscriberTag()
+      : 'followers:${DateTime.now().year}';
   
   List<String> _followers = [];
   bool _isLoadingFollowers = false;
-  String _encryptedType = 'encrypted'; // 'public' hoặc 'encrypted'
+  String _encryptedType = PreFfi.isSupported ? 'encrypted' : 'public';
   
   @override
   void initState() {
@@ -434,11 +443,22 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   Future<void> _createPost() async {
     final userProfile = widget.userProfile;
     String? createdPostId;
+    // Set while the post is paid for but not fully uploaded: a failure then cancels the escrow.
+    String? paidUnuploadedFileId;
     String? createdFileId;
     String? createdNodeId;
     String? createdShareType;
     String? createdEncryptedType;
-    AppLogger.log('DEBUG: _shareType at start of _createPost: [32m[1m[4m$_shareType[0m');
+    AppLogger.log('DEBUG: _shareType at start of _createPost: $_shareType pre=$_followersUsePre');
+    if (_shareType == 'followers' && !PreFfi.isSupported) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Creating followers posts is not available on web yet. Use Public or Me, or the native app.'),
+          backgroundColor: DeltaniumTheme.errorColor,
+        ),
+      );
+      return;
+    }
     // Validate if there's content to post
     if (_textController.text.trim().isEmpty && _selectedMedia.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -593,7 +613,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         AppLogger.log('🔍 END DEBUG CREATE POST');
         
         final String? policyTag = (_shareType == 'followers' && _followersUsePre)
-            ? 'followers:${DateTime.now().year}'
+            ? _preTag
             : null;
         final postResult = await PostService.createPost(
           textContent: _textController.text,
@@ -696,6 +716,25 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           entry['type'] ??= 'post';
           entry['shareType'] ??= _shareType;
         }
+
+        // Pay for storage before anything reaches the store node: the store submits the post to the
+        // chain once it has the metadata, so a short balance must stop the post here (402).
+        setState(() {
+          _loadingMessage = 'Paying for storage...';
+        });
+        final storageReg = await WalletService.registerStorage(
+          fileId: postFileId,
+          storeNodeIds: [selectedNode['id'].toString()],
+          sizeBytes: WalletService.storedBytes(metadataEntries, postBlocks),
+          blocks: WalletService.blockHashes(postBlocks),
+        );
+        if (storageReg.status == 402) {
+          throw Exception('Not enough D to store this post: ${storageReg.error}');
+        }
+        if (!storageReg.ok) {
+          AppLogger.log('Storage registration failed (${storageReg.status}), posting anyway: ${storageReg.error}');
+        }
+        if (storageReg.ok) paidUnuploadedFileId = postFileId;
 
         // Upload metadata entries (one for each user with access)
         for (int i = 0; i < metadataEntries.length; i++) {
@@ -836,15 +875,19 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         }
         
         AppLogger.log('Post uploaded successfully to storage node: $postFileId');
+        paidUnuploadedFileId = null;
+
 
         // 🆕 PRE Option2: Generate & upload rekeys for current followers
         if (_shareType == 'followers' && _followersUsePre) {
           try {
             setState(() { _loadingMessage = 'Publishing PRE tag and uploading rekeys...'; });
             final pre = PreService();
-            final tag = pre.buildPolicyTagForYear();
+            final tag = _preTag;
             // Include self (author) to generate rk_{A->A} so author can view PRE posts in Following
-            final followerList = _followers.toList();
+            final followerList = _subscribersOnly
+                ? [_userPublicKey!, ...await WalletService.getSubscribers()]
+                : _followers.toList();
             final results = await pre.generateAndUploadRekeys(
               apiBaseUrl: _apiBaseUrl,
               authorPubKey: _userPublicKey!,
@@ -880,7 +923,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         });
         
         final String? policyTag = (_shareType == 'followers' && _followersUsePre)
-            ? 'followers:${DateTime.now().year}'
+            ? _preTag
             : null;
         final postResult = await PostService.createPost(
           textContent: _textController.text,
@@ -969,6 +1012,25 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           entry['type'] ??= 'post';
           entry['shareType'] ??= _shareType;
         }
+
+        // Pay for storage before anything reaches the store node: the store submits the post to the
+        // chain once it has the metadata, so a short balance must stop the post here (402).
+        setState(() {
+          _loadingMessage = 'Paying for storage...';
+        });
+        final storageReg = await WalletService.registerStorage(
+          fileId: postFileId,
+          storeNodeIds: [selectedNode['id'].toString()],
+          sizeBytes: WalletService.storedBytes(metadataEntries, postBlocks),
+          blocks: WalletService.blockHashes(postBlocks),
+        );
+        if (storageReg.status == 402) {
+          throw Exception('Not enough D to store this post: ${storageReg.error}');
+        }
+        if (!storageReg.ok) {
+          AppLogger.log('Storage registration failed (${storageReg.status}), posting anyway: ${storageReg.error}');
+        }
+        if (storageReg.ok) paidUnuploadedFileId = postFileId;
 
         // Upload metadata entries (one for each user with access)
         for (int i = 0; i < metadataEntries.length; i++) {
@@ -1106,14 +1168,18 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         }
         
         AppLogger.log('Text post uploaded successfully to storage node: $postFileId');
+        paidUnuploadedFileId = null;
+
 
         // 🆕 PRE Option2: Generate & upload rekeys for current followers
         if (_shareType == 'followers' && _followersUsePre) {
           try {
             setState(() { _loadingMessage = 'Publishing PRE tag and uploading rekeys...'; });
             final pre = PreService();
-            final tag = pre.buildPolicyTagForYear();
-            final followerList = _followers.where((f) => f != _userPublicKey).toList();
+            final tag = _preTag;
+            final followerList = (_subscribersOnly ? await WalletService.getSubscribers() : _followers)
+                .where((f) => f != _userPublicKey)
+                .toList();
             final results = await pre.generateAndUploadRekeys(
               apiBaseUrl: _apiBaseUrl,
               authorPubKey: _userPublicKey!,
@@ -1152,6 +1218,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       context.go(AppRoutes.localUserHome, extra: userProfile);
     } catch (e) {
       AppLogger.log('Error creating post: $e');
+      final unpaidFileId = paidUnuploadedFileId;
+      if (unpaidFileId != null) {
+        // Paid but the upload failed: get the fee back and spare the Stores a challenge on missing blocks.
+        await WalletService.cancelStorage(unpaidFileId);
+      }
       if (!mounted) return;
       
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1173,32 +1244,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   
   // Fetch available store nodes
   Future<List<Map<String, dynamic>>> _fetchStoreNodes() async {
-    try {
-        AppLogger.log('DEBUG: Making HTTP request to: $_apiBaseUrl/storenode/list');
-      final response = await http.get(
-        Uri.parse('$_apiBaseUrl/storenode/list'),
-      );
-      
-      AppLogger.log('DEBUG: Response status code: ${response.statusCode}');
-      AppLogger.log('DEBUG: Response body: ${response.body}');
-      
-      if (response.statusCode != 200) {
-        throw Exception('Failed to fetch store nodes: ${response.statusCode}');
-      }
-      
-      final List<dynamic> nodesJson = json.decode(response.body);
-      return nodesJson.map((node) => Map<String, dynamic>.from(node)).toList();
-    } catch (e) {
-      AppLogger.log('DEBUG: Error in _fetchStoreNodes: $e');
-      // For demo purposes, return a mock node if API fails
-      return [
-        {
-          'id': 'mock-node-1',
-          'publicKey': 'mock-public-key',
-          'endpoint': 'http://localhost:5001',
-        }
-      ];
-    }
+    return StoreNodeDirectory.listNodes();
   }
   
   // Select primary + replica Store nodes (N-of-M).
@@ -1246,7 +1292,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       
       // Determine PRE policy for followers
       final String? mediaPolicyTag = (_shareType == 'followers' && _followersUsePre)
-          ? 'followers:${DateTime.now().year}'
+          ? _preTag
           : null;
       final String? mediaCapsuleFor = mediaPolicyTag != null ? 'tag' : null;
       final String? mediaPolicyScheme = mediaPolicyTag != null ? 'CPRE' : null;
@@ -1967,25 +2013,32 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             Radio<String>(
               value: 'followers',
               groupValue: _shareType,
-              onChanged: (val) async {
-                setState(() {
-                  _shareType = val!;
-                  _isLoadingFollowers = true;
-                  _encryptedType = 'encrypted';
-                  _followersUsePre = true;
-                });
-                final followers = await _fetchFollowers();
-                AppLogger.log('DEBUG: Followers fetched:');
-                for (var f in followers) {
-                  AppLogger.log('  Follower: ' + f);
-                }
-                setState(() {
-                  _followers = followers;
-                  _isLoadingFollowers = false;
-                });
-              },
+              onChanged: !PreFfi.isSupported
+                  ? null
+                  : (val) async {
+                      setState(() {
+                        _shareType = val!;
+                        _isLoadingFollowers = true;
+                        _encryptedType = 'encrypted';
+                        _followersUsePre = true;
+                      });
+                      final followers = await _fetchFollowers();
+                      AppLogger.log('DEBUG: Followers fetched:');
+                      for (var f in followers) {
+                        AppLogger.log('  Follower: ' + f);
+                      }
+                      setState(() {
+                        _followers = followers;
+                        _isLoadingFollowers = false;
+                      });
+                    },
             ),
-            const Text('Follower'),
+            Text(
+              'Follower',
+              style: TextStyle(
+                color: PreFfi.isSupported ? null : Colors.grey,
+              ),
+            ),
             Radio<String>(
               value: 'public',
               groupValue: _shareType,
@@ -2000,6 +2053,23 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             const Text('Public'),
           ],
         ),
+        if (!PreFfi.isSupported)
+          const Padding(
+            padding: EdgeInsets.only(left: 8.0, top: 4, bottom: 4),
+            child: Text(
+              'Tạm thời chưa tạo được bài Followers trên web (cần Umbral PRE). Dùng Public / Chỉ mình tôi, hoặc app native.',
+              style: TextStyle(color: Colors.orange, fontSize: 13),
+            ),
+          ),
+        if (_shareType == 'followers' && PreFfi.isSupported)
+          CheckboxListTile(
+            dense: true,
+            contentPadding: const EdgeInsets.only(left: 8),
+            value: _subscribersOnly,
+            onChanged: (v) => setState(() => _subscribersOnly = v ?? false),
+            title: const Text('Chỉ người đăng ký (subscribers)'),
+            subtitle: Text('Tag ${WalletService.currentSubscriberTag()} — chỉ người đã trả phí tháng này đọc được'),
+          ),
         if (_shareType == 'followers' && _isLoadingFollowers)
           Padding(
             padding: const EdgeInsets.all(8.0),

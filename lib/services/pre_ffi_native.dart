@@ -18,6 +18,9 @@ class PreFfi {
     _bind();
   }
 
+  /// True on native platforms with Umbral PRE FFI bindings.
+  static bool get isSupported => true;
+
   static PreFfi? _instance;
   static PreFfi instance() {
     _instance ??= PreFfi._(_open());

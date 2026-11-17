@@ -60,4 +60,32 @@ class UserProfile {
       'followers': followers,
     };
   }
+
+  UserProfile copyWith({
+    String? id,
+    String? email,
+    String? publicKey,
+    String? fullName,
+    String? bio,
+    String? avatarUrl,
+    String? dateOfBirth,
+    bool? isVerified,
+    String? walletAddress,
+    List<String>? following,
+    List<String>? followers,
+  }) {
+    return UserProfile(
+      id: id ?? this.id,
+      email: email ?? this.email,
+      publicKey: publicKey ?? this.publicKey,
+      fullName: fullName ?? this.fullName,
+      bio: bio ?? this.bio,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
+      dateOfBirth: dateOfBirth ?? this.dateOfBirth,
+      isVerified: isVerified ?? this.isVerified,
+      walletAddress: walletAddress ?? this.walletAddress,
+      following: following ?? this.following,
+      followers: followers ?? this.followers,
+    );
+  }
 } 

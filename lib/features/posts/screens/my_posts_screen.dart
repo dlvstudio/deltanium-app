@@ -4,6 +4,7 @@ import 'package:deltanium_app/services/auth_service.dart';
 import 'package:deltanium_app/services/crypto_service.dart';
 import 'package:deltanium_app/services/file_crypto_service.dart';
 import 'package:http/http.dart' as http;
+import 'package:deltanium_app/services/egress_receipt_service.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:math' as math;
@@ -14,6 +15,7 @@ import 'package:deltanium_app/features/posts/widgets/optimized_post_list.dart';
 import 'package:deltanium_app/config/constants.dart';
 import 'package:deltanium_app/services/app_logger.dart';
 import 'package:deltanium_app/services/pre_ffi.dart';
+import 'package:deltanium_app/services/store_node_directory.dart';
 
 
 class PostMetadata {
@@ -148,7 +150,7 @@ class MyPostsScreen extends StatefulWidget {
   ) async {
     try {
       // 1) Get PoP nonce
-      final nonceResp = await http.get(Uri.parse('$apiBaseUrl/policy/nonce?userPubKey=$followerPubKey'));
+      final nonceResp = await BlockHttp.get(Uri.parse('$apiBaseUrl/policy/nonce?userPubKey=$followerPubKey'));
       if (nonceResp.statusCode != 200) return null;
       final nonce = (json.decode(nonceResp.body) as Map<String, dynamic>)['nonce'] as String?;
       if (nonce == null || nonce.isEmpty) return null;
@@ -359,7 +361,7 @@ class MyPostsScreen extends StatefulWidget {
           final dataToSign = '$method$blockPath$timestamp$bodyHash';
           final signature = await CryptoService.sign(dataToSign, mnemonic);
           
-          final metadataResponse = await http.get(
+          final metadataResponse = await BlockHttp.get(
             Uri.parse('$nodeEndpoint$blockPath'),
             headers: {
               'X-User-PubKey': CryptoService.normalizePublicKey(currentUserPublicKey),
@@ -396,7 +398,7 @@ class MyPostsScreen extends StatefulWidget {
             final contentDataToSign = '$method$contentPath$timestamp$bodyHash';
             final contentSignature = await CryptoService.sign(contentDataToSign, mnemonic);
             
-            final contentResponse = await http.get(
+            final contentResponse = await BlockHttp.get(
               Uri.parse('$nodeEndpoint$contentPath'),
               headers: {
                 'X-User-PubKey': CryptoService.normalizePublicKey(currentUserPublicKey),
@@ -467,7 +469,7 @@ class MyPostsScreen extends StatefulWidget {
         final bodyHash = '';
         final dataToSign = '$method$path$timestamp$bodyHash';
         final signature = await CryptoService.sign(dataToSign, mnemonic);
-        final metadataResponse = await http.get(
+        final metadataResponse = await BlockHttp.get(
           Uri.parse('$nodeEndpoint$path'),
           headers: {
             'X-User-PubKey': CryptoService.normalizePublicKey(currentUserPublicKey),
@@ -491,7 +493,7 @@ class MyPostsScreen extends StatefulWidget {
           final contentSignature = await CryptoService.sign(contentDataToSign, mnemonic);
           final _cStart = DateTime.now();
           AppLogger.log('🌐 HTTP GET ' + '$nodeEndpoint$contentPath' + ' START ' + _cStart.toIso8601String());
-          final contentResponse = await http.get(
+          final contentResponse = await BlockHttp.get(
             Uri.parse('$nodeEndpoint$contentPath'),
             headers: {
               'X-User-PubKey': CryptoService.normalizePublicKey(currentUserPublicKey),
@@ -591,7 +593,7 @@ class MyPostsScreen extends StatefulWidget {
       final signature = await CryptoService.sign(dataToSign, mnemonic);
       final _metaStart = DateTime.now();
       AppLogger.log('🌐 HTTP GET ' + '$nodeEndpoint$metadataPath' + ' START ' + _metaStart.toIso8601String());
-      final metadataResponse = await http.get(
+      final metadataResponse = await BlockHttp.get(
         Uri.parse('$nodeEndpoint$metadataPath'),
         headers: {
           'X-User-PubKey': CryptoService.normalizePublicKey(currentUserPublicKey),
@@ -646,7 +648,7 @@ class MyPostsScreen extends StatefulWidget {
         final contentSignature = await CryptoService.sign(contentDataToSign, mnemonic);
         final _cStart2 = DateTime.now();
         AppLogger.log('🌐 HTTP GET ' + '$nodeEndpoint$contentPath' + ' START ' + _cStart2.toIso8601String());
-        final contentResponse = await http.get(
+        final contentResponse = await BlockHttp.get(
           Uri.parse('$nodeEndpoint$contentPath'),
           headers: {
             'X-User-PubKey': CryptoService.normalizePublicKey(currentUserPublicKey),
@@ -874,7 +876,7 @@ class _MyPostsScreenState extends State<MyPostsScreen> {
           final requestStartTime = _startTiming('Node ${nodeIndex + 1} HTTP Request');
           final _httpStart = DateTime.now();
           AppLogger.log('🌐 HTTP GET ' + '$nodeEndpoint/api/file/posts' + ' START ' + _httpStart.toIso8601String());
-          final postsResponse = await http.get(
+          final postsResponse = await BlockHttp.get(
             Uri.parse('$nodeEndpoint/api/file/posts'),
             headers: {
               'X-User-PubKey': CryptoService.normalizePublicKey(_userPublicKey!),
@@ -1069,7 +1071,7 @@ class _MyPostsScreenState extends State<MyPostsScreen> {
       final dataToSign = '$method$path$timestamp$bodyHash';
       final signature = await CryptoService.sign(dataToSign, _userMnemonic!);
       
-      final metadataResponse = await http.get(
+      final metadataResponse = await BlockHttp.get(
         Uri.parse('$nodeEndpoint$path'),
         headers: {
           'X-User-PubKey': CryptoService.normalizePublicKey(_userPublicKey!),
@@ -1136,7 +1138,7 @@ class _MyPostsScreenState extends State<MyPostsScreen> {
           final blockDataToSign = '$blockMethod$blockPath$blockTimestamp$blockBodyHash';
           final blockSignature = await CryptoService.sign(blockDataToSign, _userMnemonic!);
           
-          final blockResponse = await http.get(
+          final blockResponse = await BlockHttp.get(
             Uri.parse('$nodeEndpoint$blockPath'),
             headers: {
               'X-User-PubKey': CryptoService.normalizePublicKey(_userPublicKey!),
@@ -1258,19 +1260,7 @@ class _MyPostsScreenState extends State<MyPostsScreen> {
   // 🆕 Method to fetch available storage nodes
   Future<List<Map<String, dynamic>>> _fetchAvailableNodes() async {
     try {
-      final _httpStart = DateTime.now();
-      AppLogger.log('🌐 HTTP GET /api/storenode/list START ' + _httpStart.toIso8601String());
-      final storeNodesResponse = await http.get(
-        Uri.parse('${AppConstants.apiBaseUrl}/storenode/list'),
-      );
-      AppLogger.log('🌐 HTTP GET /api/storenode/list END ' + DateTime.now().toIso8601String() + ' (' + DateTime.now().difference(_httpStart).inMilliseconds.toString() + 'ms) code=' + storeNodesResponse.statusCode.toString());
-
-      if (storeNodesResponse.statusCode != 200) {
-        throw Exception('Failed to fetch storage nodes');
-      }
-
-      final List<dynamic> storeNodesJson = json.decode(storeNodesResponse.body);
-      return storeNodesJson.map((node) => Map<String, dynamic>.from(node)).toList();
+      return await StoreNodeDirectory.listNodes(requireNonEmpty: false);
     } catch (e) {
       AppLogger.log('Error fetching storage nodes: $e');
       return [];

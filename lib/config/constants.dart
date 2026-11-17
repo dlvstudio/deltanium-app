@@ -1,11 +1,16 @@
 class AppConstants {
   // API URLs
-  static const String baseUrl = 'https://api.deltanium.com';
+  /// Central origin, derived from [apiBaseUrl] so one CENTRAL_API_BASE define switches networks.
+  static String get baseUrl => apiBaseUrl.replaceFirst(RegExp(r'/api/?$'), '');
   static const String apiVersion = 'v1';
+  /// Override locally with `--dart-define=CENTRAL_API_BASE=http://127.0.0.1:5002/api`.
   static const String apiBaseUrl = String.fromEnvironment(
     'CENTRAL_API_BASE',
-    defaultValue: 'http://127.0.0.1:5002/api',
+    defaultValue: 'https://api.deltanium.com/api',
   );
+
+  static bool get isLocalApiBase =>
+      apiBaseUrl.contains('localhost') || apiBaseUrl.contains('127.0.0.1');
   
   // Endpoints
   static const String authEndpoint = '$apiBaseUrl/auth';
@@ -46,6 +51,10 @@ class AppConstants {
     defaultValue: 2,
   );
   
+  /// Currency units: base unit D (1 D = 1 VND); display unit DLT (Deltanium).
+  static const double vndPerD = 1;
+  static const double dPerDlt = 1000000;
+
   // Animation Durations
   static const Duration shortAnimationDuration = Duration(milliseconds: 200);
   static const Duration mediumAnimationDuration = Duration(milliseconds: 350);

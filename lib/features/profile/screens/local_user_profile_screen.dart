@@ -1,11 +1,17 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:deltanium_app/app/router.dart';
+import 'package:deltanium_app/config/brand.dart';
+import 'package:deltanium_app/config/constants.dart';
 import 'package:deltanium_app/config/theme.dart';
 import 'package:deltanium_app/models/user_profile.dart';
-import 'package:go_router/go_router.dart';
-import 'package:deltanium_app/app/router.dart';
 import 'package:deltanium_app/services/auth_service.dart';
 import 'package:deltanium_app/services/crypto_service.dart';
+import 'package:deltanium_app/services/user_service.dart';
+import 'package:deltanium_app/services/wallet_service.dart';
+import 'package:deltanium_app/utils/d_format.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class LocalUserProfileScreen extends StatefulWidget {
   final UserProfile userProfile;
@@ -21,15 +27,713 @@ class LocalUserProfileScreen extends StatefulWidget {
 
 class _LocalUserProfileScreenState extends State<LocalUserProfileScreen> {
   final _authService = AuthService();
-  
+  final _userService = UserService();
+  late UserProfile _profile;
+  double? _dBalance;
+  Map<String, dynamic>? _economics;
+  Map<String, dynamic>? _usage;
+  bool _walletLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _profile = widget.userProfile;
+    _loadWallet();
+  }
+
+  Future<void> _loadWallet() async {
+    setState(() => _walletLoading = true);
+    final results = await Future.wait([
+      WalletService.getBalance(),
+      WalletService.getEconomics(),
+      WalletService.getUsage(),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _dBalance = results[0] as double?;
+      _economics = results[1] as Map<String, dynamic>?;
+      _usage = results[2] as Map<String, dynamic>?;
+      _walletLoading = false;
+    });
+  }
+
+  double _channelFee(String channel) {
+    final byChannel = _economics?['onRampFeeByChannel'] as Map<String, dynamic>?;
+    final v = byChannel?[channel] as num?;
+    if (v != null) return v.toDouble();
+    return channel == 'card' ? 5 : 3;
+  }
+
+  void _toast(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  Future<void> _showTopUpDialog() async {
+    final controller = TextEditingController(text: '100000');
+    final vndPerD = (_economics?['vndPerD'] as num?)?.toDouble() ?? AppConstants.vndPerD;
+    final minTopUp = (_economics?['minTopUpVnd'] as num?)?.toDouble() ?? 10000;
+    var channel = 'transfer';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) {
+          final fee = _channelFee(channel);
+          final amount = double.tryParse(controller.text.trim()) ?? 0;
+          final credited = amount * (100 - fee) / 100 / vndPerD;
+          return AlertDialog(
+            backgroundColor: Brand.panel,
+            title: Text('Top up D', style: GoogleFonts.syne(color: Brand.text)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Rate ${vndPerD.toStringAsFixed(0)} VND = 1 D (1 DLT = ${DFormat.d(AppConstants.dPerDlt)}). '
+                  'Every D is backed 1:1 by VND in the network reserve. Minimum ${DFormat.vnd(minTopUp)}.',
+                  style: GoogleFonts.manrope(color: Brand.muted, fontSize: 13, height: 1.4),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final c in const ['transfer', 'card'])
+                      ChoiceChip(
+                        selected: channel == c,
+                        onSelected: (_) => setLocal(() => channel = c),
+                        label: Text(
+                          '${c == 'transfer' ? 'Bank transfer / VietQR' : 'Card'} · ${_channelFee(c).toStringAsFixed(0)}%',
+                          style: GoogleFonts.manrope(fontSize: 13),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: controller,
+                  keyboardType: TextInputType.number,
+                  onChanged: (_) => setLocal(() {}),
+                  style: GoogleFonts.manrope(color: Brand.text),
+                  decoration: InputDecoration(
+                    labelText: 'Amount (VND)',
+                    labelStyle: GoogleFonts.manrope(color: Brand.muted),
+                    filled: true,
+                    fillColor: Brand.inkSoft,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(Brand.radius)),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'You receive ≈ ${DFormat.full(credited < 0 ? 0 : credited)}',
+                  style: GoogleFonts.manrope(color: Brand.sand, fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text('Cancel', style: GoogleFonts.manrope(color: Brand.muted)),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: FilledButton.styleFrom(backgroundColor: Brand.sand, foregroundColor: Brand.ink),
+                child: const Text('Create order'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+    final amount = double.tryParse(controller.text.trim());
+    if (amount == null || amount <= 0) return;
+
+    final result = await WalletService.createTopUpResult(fiatAmountVnd: amount, channel: channel);
+    if (!mounted) return;
+    if (!result.ok) {
+      _toast('Could not create top-up order: ${result.error}');
+      return;
+    }
+
+    final order = result.map?['order'] as Map<String, dynamic>?;
+    final orderId = order?['id']?.toString() ?? '—';
+    final creditedNum = order?['dCredited'] as num?;
+    final credited = creditedNum != null ? DFormat.full(creditedNum) : '—';
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Brand.panel,
+        title: Text('Order created', style: GoogleFonts.syne(color: Brand.text)),
+        content: Text(
+          'Order ID: $orderId\nYou will receive $credited after fiat is confirmed by ops.\n\nTransfer VND to the Deltanium operating account and send the order ID to support.',
+          style: GoogleFonts.manrope(color: Brand.muted, height: 1.45),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: orderId));
+            },
+            child: Text('Copy order ID', style: GoogleFonts.manrope(color: Brand.sand)),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            style: FilledButton.styleFrom(backgroundColor: Brand.sand, foregroundColor: Brand.ink),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+    await _loadWallet();
+  }
+
+  Future<double?> _askAmount({required String title, required String hint, required String label, String initial = ''}) async {
+    final controller = TextEditingController(text: initial);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Brand.panel,
+        title: Text(title, style: GoogleFonts.syne(color: Brand.text)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(hint, style: GoogleFonts.manrope(color: Brand.muted, fontSize: 13, height: 1.4)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              style: GoogleFonts.manrope(color: Brand.text),
+              decoration: InputDecoration(
+                labelText: label,
+                labelStyle: GoogleFonts.manrope(color: Brand.muted),
+                filled: true,
+                fillColor: Brand.inkSoft,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(Brand.radius)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: GoogleFonts.manrope(color: Brand.muted)),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: Brand.sand, foregroundColor: Brand.ink),
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return null;
+    return double.tryParse(controller.text.trim());
+  }
+
+  Future<void> _showRedeemDialog() async {
+    final amount = await _askAmount(
+      title: 'Redeem D to VND',
+      hint: 'For KYC-verified creators and node operators. Fee 1%, minimum 100.000 D, paid weekly to your verified bank account.',
+      label: 'Amount (D)',
+    );
+    if (amount == null || amount <= 0) return;
+    final r = await WalletService.redeem(amount);
+    _toast(r.ok ? 'Redemption requested (${r.map?['status']})' : 'Redemption failed: ${r.error}');
+    await _loadWallet();
+  }
+
+  Future<void> _showPlanDialog() async {
+    final current = (_usage?['plan'] as Map<String, dynamic>?)?['pricePerMonthD'] as num?;
+    final price = await _askAmount(
+      title: 'Subscription price',
+      hint: 'Monthly price in D for your subscribers-only posts (0 disables). You receive 90%.',
+      label: 'Price per month (D)',
+      initial: current?.toStringAsFixed(0) ?? '',
+    );
+    if (price == null || price < 0) return;
+    final r = await WalletService.setPlan(price);
+    _toast(r.ok ? 'Subscription price saved' : 'Could not save: ${r.error}');
+    await _loadWallet();
+  }
+
+  Future<void> _showEgressCapDialog() async {
+    final cap = await _askAmount(
+      title: 'Monthly bandwidth cap',
+      hint: 'Maximum D per month charged for reads beyond your included quota (0 = no cap). '
+          'When reached, your content is served to subscribers only.',
+      label: 'Cap (D / month)',
+    );
+    if (cap == null || cap < 0) return;
+    final r = await WalletService.setEgressCap(cap);
+    _toast(r.ok ? 'Bandwidth cap saved' : 'Could not save: ${r.error}');
+    await _loadWallet();
+  }
+
+  /// Human-readable size. Posts and reactions are a few KB, so a fixed "x.x MB" would show 0.0 MB for them.
+  String _mb(num? bytes) {
+    final b = (bytes ?? 0).toDouble();
+    if (b < 1024) return '${b.round()} B';
+    if (b < 1024 * 1024) return '${(b / 1024).toStringAsFixed(1)} KB';
+    if (b < 1024 * 1024 * 1024) return '${(b / (1024 * 1024)).toStringAsFixed(1)} MB';
+    return '${(b / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+
+  /// Two steps: send a code to the address, then type it in. One verified address unlocks one account.
+  Future<void> _verifyEmail() async {
+    final emailCtrl = TextEditingController(text: _profile.email ?? '');
+    final codeCtrl = TextEditingController();
+    var codeSent = false;
+    var busy = false;
+    String? error;
+    final verified = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) {
+          Future<void> run(Future<WalletResult> Function() call, void Function() onOk) async {
+            setLocal(() { busy = true; error = null; });
+            final r = await call();
+            setLocal(() {
+              busy = false;
+              if (r.ok) { onOk(); } else { error = r.error ?? 'Something went wrong'; }
+            });
+          }
+          return AlertDialog(
+            title: const Text('Verify your email'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: emailCtrl,
+                  enabled: !codeSent && !busy,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(labelText: 'Email'),
+                ),
+                if (codeSent)
+                  TextField(
+                    controller: codeCtrl,
+                    enabled: !busy,
+                    keyboardType: TextInputType.number,
+                    maxLength: 6,
+                    decoration: const InputDecoration(labelText: '6-digit code from the email'),
+                  ),
+                if (error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(error!, style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: busy ? null : () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+              if (codeSent)
+                TextButton(
+                  onPressed: busy ? null : () => run(() => WalletService.sendEmailCode(emailCtrl.text), () {}),
+                  child: const Text('Resend'),
+                ),
+              FilledButton(
+                onPressed: busy
+                    ? null
+                    : codeSent
+                        ? () => run(() => WalletService.verifyEmailCode(codeCtrl.text), () => Navigator.pop(ctx, true))
+                        : () => run(() => WalletService.sendEmailCode(emailCtrl.text), () => codeSent = true),
+                child: Text(codeSent ? 'Verify' : 'Send code'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    emailCtrl.dispose();
+    codeCtrl.dispose();
+    if (verified == true) {
+      _toast('Email verified');
+      await _loadWallet();
+    }
+  }
+
+  Widget _usageSummary() {
+    final free = _usage?['freeTier'] as Map<String, dynamic>?;
+    final egress = _usage?['egress'] as Map<String, dynamic>?;
+    final storage = _usage?['storage'] as Map<String, dynamic>?;
+    final plan = _usage?['plan'] as Map<String, dynamic>?;
+    if (free == null) return const SizedBox.shrink();
+    final style = GoogleFonts.manrope(color: Brand.muted, fontSize: 12, height: 1.5);
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            free['eligible'] == true
+                ? 'Free storage: ${_mb(free['storageUsedBytes'])} / ${_mb(free['storageQuotaBytes'])}'
+                : 'Free tier: verify your email to get ${_mb(free['storageQuotaBytes'])} free storage',
+            style: style,
+          ),
+          if (free['emailVerified'] != true)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 32)),
+                onPressed: _verifyEmail,
+                child: Text(
+                  free['requiresVerifiedEmail'] == true ? 'Verify email to keep free storage' : 'Verify email',
+                  style: GoogleFonts.manrope(color: Brand.sand, fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          Text(
+            'Paid storage: ${_mb(storage?['paidBytes'])} · ${storage?['pricePerGbMonth'] ?? 800} D/GB/month per replica',
+            style: style,
+          ),
+          Text(
+            'Reads this month: ${_mb(egress?['bytes'])} · over-quota charged ${DFormat.d((egress?['chargedD'] as num?) ?? 0)}',
+            style: style,
+          ),
+          if (plan != null && plan['active'] == true)
+            Text('Your subscription: ${DFormat.d(plan['pricePerMonthD'] as num)} / month', style: style),
+        ],
+      ),
+    );
+  }
+
   // Get compressed public key (always use compressed format)
   String _getCompressedPublicKey(String uncompressedKey) {
     return CryptoService.convertToCompressedPublicKey(uncompressedKey);
   }
+
+  InputDecoration _fieldDecoration({required String label}) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: GoogleFonts.manrope(color: Brand.muted),
+      filled: true,
+      fillColor: Brand.inkSoft,
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(Brand.radius),
+        borderSide: const BorderSide(color: Brand.line),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(Brand.radius),
+        borderSide: const BorderSide(color: Brand.sand),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(Brand.radius),
+        borderSide: BorderSide(color: Brand.danger.withValues(alpha: 0.7)),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(Brand.radius),
+        borderSide: const BorderSide(color: Brand.danger),
+      ),
+    );
+  }
+
+  DateTime? _parseBirthday(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    try {
+      return DateTime.parse(raw);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _showEditProfileDialog() async {
+    final formKey = GlobalKey<FormState>();
+    final emailController = TextEditingController(text: _profile.email ?? '');
+    final fullNameController =
+        TextEditingController(text: _profile.fullName ?? '');
+    final bioController = TextEditingController(text: _profile.bio ?? '');
+    final avatarUrlController =
+        TextEditingController(text: _profile.avatarUrl ?? '');
+    DateTime? selectedDateOfBirth = _parseBirthday(_profile.dateOfBirth);
+    var isSaving = false;
+    String? errorMessage;
+
+    final bodyStyle = GoogleFonts.manrope(color: Brand.text, height: 1.45);
+    final mutedStyle = GoogleFonts.manrope(color: Brand.muted, height: 1.4);
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: !isSaving,
+      barrierColor: Colors.black.withValues(alpha: 0.6),
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding:
+                  const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 460),
+                child: Material(
+                  color: Brand.panel,
+                  borderRadius: BorderRadius.circular(Brand.radius + 4),
+                  clipBehavior: Clip.antiAlias,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(28, 22, 28, 28),
+                    child: Form(
+                      key: formKey,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Edit profile',
+                                  style: GoogleFonts.syne(
+                                    color: Brand.text,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 22,
+                                    letterSpacing: -1.1,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Close',
+                                icon: const Icon(Icons.close, color: Brand.muted),
+                                onPressed: isSaving
+                                    ? null
+                                    : () => Navigator.pop(dialogContext),
+                              ),
+                            ],
+                          ),
+                          Text(
+                            'Update how others see you. Changes are signed with your key.',
+                            style: mutedStyle,
+                          ),
+                          const SizedBox(height: 22),
+                          TextFormField(
+                            controller: emailController,
+                            keyboardType: TextInputType.emailAddress,
+                            style: bodyStyle,
+                            decoration: _fieldDecoration(label: 'Email'),
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Enter your email';
+                              }
+                              if (!value.contains('@')) {
+                                return 'Enter a valid email';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            controller: fullNameController,
+                            style: bodyStyle,
+                            decoration: _fieldDecoration(label: 'Full name'),
+                            validator: (value) {
+                              if (value == null || value.trim().isEmpty) {
+                                return 'Enter your full name';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                          InkWell(
+                            borderRadius: BorderRadius.circular(Brand.radius),
+                            onTap: isSaving
+                                ? null
+                                : () async {
+                                    final picked = await showDatePicker(
+                                      context: context,
+                                      initialDate: selectedDateOfBirth ??
+                                          DateTime.now().subtract(
+                                            const Duration(days: 365 * 18),
+                                          ),
+                                      firstDate: DateTime(1900),
+                                      lastDate: DateTime.now(),
+                                    );
+                                    if (picked != null) {
+                                      setDialogState(
+                                        () => selectedDateOfBirth = picked,
+                                      );
+                                    }
+                                  },
+                            child: InputDecorator(
+                              decoration:
+                                  _fieldDecoration(label: 'Date of birth'),
+                              child: Text(
+                                selectedDateOfBirth != null
+                                    ? '${selectedDateOfBirth!.day.toString().padLeft(2, '0')}/'
+                                        '${selectedDateOfBirth!.month.toString().padLeft(2, '0')}/'
+                                        '${selectedDateOfBirth!.year}'
+                                    : 'Select date',
+                                style: selectedDateOfBirth != null
+                                    ? bodyStyle
+                                    : mutedStyle,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            controller: bioController,
+                            maxLines: 2,
+                            style: bodyStyle,
+                            decoration:
+                                _fieldDecoration(label: 'Bio (optional)'),
+                          ),
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            controller: avatarUrlController,
+                            style: bodyStyle,
+                            decoration: _fieldDecoration(
+                              label: 'Avatar URL (optional)',
+                            ),
+                          ),
+                          if (errorMessage != null) ...[
+                            const SizedBox(height: 14),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Brand.danger.withValues(alpha: 0.14),
+                                borderRadius:
+                                    BorderRadius.circular(Brand.radius),
+                                border: Border.all(
+                                  color: Brand.danger.withValues(alpha: 0.4),
+                                ),
+                              ),
+                              child: Text(
+                                errorMessage!,
+                                style: GoogleFonts.manrope(
+                                  color: Brand.sandBright,
+                                  height: 1.35,
+                                ),
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 20),
+                          SizedBox(
+                            height: 48,
+                            child: FilledButton(
+                              onPressed: isSaving
+                                  ? null
+                                  : () async {
+                                      if (selectedDateOfBirth == null) {
+                                        setDialogState(() {
+                                          errorMessage =
+                                              'Please select your date of birth.';
+                                        });
+                                        return;
+                                      }
+                                      if (!formKey.currentState!.validate()) {
+                                        return;
+                                      }
+
+                                      setDialogState(() {
+                                        isSaving = true;
+                                        errorMessage = null;
+                                      });
+
+                                      try {
+                                        final auth =
+                                            await _authService.getCurrentAuthInfo();
+                                        final mnemonic = auth?['mnemonic'];
+                                        if (mnemonic == null ||
+                                            mnemonic.isEmpty) {
+                                          setDialogState(() {
+                                            errorMessage =
+                                                'Missing signing key. Please log in again.';
+                                            isSaving = false;
+                                          });
+                                          return;
+                                        }
+
+                                        final email =
+                                            emailController.text.trim();
+                                        final fullName =
+                                            fullNameController.text.trim();
+                                        final updated =
+                                            await _userService.updateProfile(
+                                          publicKey: _profile.publicKey,
+                                          mnemonic: mnemonic,
+                                          email: email,
+                                          fullName: fullName,
+                                          dateOfBirth: selectedDateOfBirth!,
+                                          bio: bioController.text.trim(),
+                                          avatarUrl:
+                                              avatarUrlController.text.trim(),
+                                        );
+
+                                        // Keep local auth email in sync if changed
+                                        if (email != (auth?['email'] ?? '')) {
+                                          await _authService.saveAuthInfo(
+                                            email,
+                                            mnemonic,
+                                            auth?['publicKey'] ??
+                                                _profile.publicKey,
+                                          );
+                                        }
+
+                                        if (!mounted) return;
+                                        setState(() => _profile = updated);
+                                        if (dialogContext.mounted) {
+                                          Navigator.pop(dialogContext);
+                                        }
+                                        ScaffoldMessenger.of(this.context)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Profile updated'),
+                                            backgroundColor: Colors.green,
+                                          ),
+                                        );
+                                      } catch (e) {
+                                        setDialogState(() {
+                                          errorMessage = e
+                                              .toString()
+                                              .replaceFirst('Exception: ', '');
+                                          isSaving = false;
+                                        });
+                                      }
+                                    },
+                              style: FilledButton.styleFrom(
+                                backgroundColor: Brand.sand,
+                                foregroundColor: Brand.ink,
+                                disabledBackgroundColor:
+                                    Brand.sand.withValues(alpha: 0.4),
+                              ),
+                              child: isSaving
+                                  ? const SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Brand.ink,
+                                      ),
+                                    )
+                                  : Text(
+                                      'Save changes',
+                                      style: GoogleFonts.manrope(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    ).whenComplete(() {
+      emailController.dispose();
+      fullNameController.dispose();
+      bioController.dispose();
+      avatarUrlController.dispose();
+    });
+  }
   
   // Copy public key to clipboard (always compressed)
   Future<void> _copyPublicKey(BuildContext context) async {
-    final keyToCopy = _getCompressedPublicKey(widget.userProfile.publicKey);
+    final keyToCopy = _getCompressedPublicKey(_profile.publicKey);
     
     await Clipboard.setData(ClipboardData(text: keyToCopy));
     
@@ -185,447 +889,378 @@ class _LocalUserProfileScreenState extends State<LocalUserProfileScreen> {
     }
   }
   
+  String _formatBirthday(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return '—';
+    try {
+      final date = DateTime.parse(raw);
+      const months = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December',
+      ];
+      return '${months[date.month - 1]} ${date.day}, ${date.year}';
+    } catch (_) {
+      return raw.split('T').first;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    
+    final displayName =
+        _profile.fullName ?? _profile.email ?? 'Local User';
+    final initial = displayName.trim().isNotEmpty
+        ? displayName.trim()[0].toUpperCase()
+        : 'D';
+
     return Scaffold(
-      backgroundColor: isDarkMode ? DeltaniumTheme.backgroundDark : DeltaniumTheme.backgroundLight,
+      backgroundColor: Brand.ink,
       appBar: AppBar(
-        title: const Text('Profile'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go(AppRoutes.localUserHome, extra: widget.userProfile),
+        backgroundColor: Brand.ink,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        title: Text(
+          'Profile',
+          style: GoogleFonts.syne(
+            color: Brand.text,
+            fontWeight: FontWeight.w700,
+          ),
         ),
-        backgroundColor: isDarkMode ? DeltaniumTheme.black : DeltaniumTheme.white,
-        iconTheme: IconThemeData(
-          color: isDarkMode ? DeltaniumTheme.primaryTan : DeltaniumTheme.primaryBrown,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded, color: Brand.text),
+          onPressed: () =>
+              context.go(AppRoutes.localUserHome, extra: _profile),
+        ),
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(1),
+          child: Divider(height: 1, thickness: 1, color: DeltaniumTheme.dividerDark),
         ),
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            // Profile Content with integrated header
-            Stack(
-              clipBehavior: Clip.none,
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Header background
-                Container(
-                  height: 80, // Reduced height
-                  width: double.infinity,
-                  color: isDarkMode ? DeltaniumTheme.primaryTan : DeltaniumTheme.primaryBrown,
-                ),
-                
-                // Profile Information with top margin to create space for avatar
-                Padding(
-                  padding: const EdgeInsets.only(top: 40),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: isDarkMode ? DeltaniumTheme.black : DeltaniumTheme.white,
-                      borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(20),
-                        topRight: Radius.circular(20),
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      height: 120,
+                      decoration: BoxDecoration(
+                        borderRadius: const BorderRadius.vertical(
+                          bottom: Radius.circular(16),
+                        ),
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Brand.mossDeep.withValues(alpha: 0.85),
+                            Brand.inkSoft,
+                            Brand.panel,
+                          ],
+                        ),
+                        border: Border.all(color: Brand.line),
                       ),
                     ),
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            // Profile Picture - using Transform instead of negative margin
-                            Transform.translate(
-                              offset: const Offset(0, -30),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  border: Border.all(
-                                    color: isDarkMode
-                                        ? DeltaniumTheme.black
-                                        : DeltaniumTheme.white,
-                                    width: 4,
-                                  ),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: CircleAvatar(
-                                  radius: 40,
-                                  backgroundImage: widget.userProfile.avatarUrl != null
-                                      ? NetworkImage(widget.userProfile.avatarUrl!)
-                                      : null,
-                                  backgroundColor: isDarkMode
-                                      ? DeltaniumTheme.surfaceDark
-                                      : DeltaniumTheme.surfaceLight,
-                                  child: widget.userProfile.avatarUrl == null
-                                      ? const Icon(Icons.person, size: 40, color: Colors.grey)
-                                      : null,
-                                ),
-                              ),
-                            ),
-                            
-                            // Edit Profile Button
-                            ElevatedButton(
-                              onPressed: () {},
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.transparent,
-                                foregroundColor: isDarkMode
-                                    ? DeltaniumTheme.primaryTan
-                                    : DeltaniumTheme.primaryBrown,
-                                elevation: 0,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(30),
-                                  side: BorderSide(
-                                    color: isDarkMode
-                                        ? DeltaniumTheme.primaryTan
-                                        : DeltaniumTheme.primaryBrown,
-                                    width: 1.5,
-                                  ),
-                                ),
-                              ),
-                              child: const Text('Edit profile', style: TextStyle(fontWeight: FontWeight.bold)),
-                            ),
-                          ],
+                    Positioned(
+                      left: 16,
+                      bottom: -36,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Brand.ink, width: 4),
                         ),
-                        
-                        const SizedBox(height: 16),
-                        
-                        // User Info
-                        Text(
-                          widget.userProfile.fullName ?? widget.userProfile.email ?? 'Local User',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: isDarkMode 
-                              ? DeltaniumTheme.darkTextPrimaryColor 
-                              : DeltaniumTheme.lightTextPrimaryColor,
-                          ),
-                        ),
-                        
-                        Row(
-                          children: [
-                            Text(
-                              widget.userProfile.email ?? '',
-                              style: TextStyle(
-                                color: isDarkMode
-                                    ? DeltaniumTheme.darkTextSecondaryColor
-                                    : DeltaniumTheme.lightTextSecondaryColor,
-                              ),
-                            ),
-                            
-                            if (widget.userProfile.isVerified)
-                              Container(
-                                margin: const EdgeInsets.symmetric(horizontal: 4),
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: isDarkMode ? DeltaniumTheme.primaryTan : DeltaniumTheme.primaryBrown,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: const Text(
-                                  'Verified',
-                                  style: TextStyle(
-                                    color: DeltaniumTheme.white,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
+                        child: CircleAvatar(
+                          radius: 42,
+                          backgroundImage: _profile.avatarUrl != null &&
+                                  _profile.avatarUrl!.isNotEmpty
+                              ? NetworkImage(_profile.avatarUrl!)
+                              : null,
+                          backgroundColor: Brand.panel,
+                          child: _profile.avatarUrl == null ||
+                                  _profile.avatarUrl!.isEmpty
+                              ? Text(
+                                  initial,
+                                  style: GoogleFonts.syne(
+                                    color: Brand.sand,
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.w800,
                                   ),
-                                ),
-                              ),
-                          ],
+                                )
+                              : null,
                         ),
-                        
-                        if (widget.userProfile.bio != null) ...[
-                          const SizedBox(height: 12),
-                          // Bio
+                      ),
+                    ),
+                    Positioned(
+                      right: 16,
+                      bottom: 12,
+                      child: OutlinedButton(
+                        onPressed: _showEditProfileDialog,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Brand.text,
+                          side: const BorderSide(color: Brand.line),
+                          backgroundColor: Brand.ink.withValues(alpha: 0.55),
+                        ),
+                        child: const Text('Edit profile'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 52),
+                Text(
+                  displayName,
+                  style: GoogleFonts.syne(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    color: Brand.text,
+                  ),
+                ),
+                if ((_profile.email ?? '').isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      _profile.email!,
+                      style: GoogleFonts.manrope(color: Brand.muted, fontSize: 14),
+                    ),
+                  ),
+                if ((_profile.bio ?? '').isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    _profile.bio!,
+                    style: GoogleFonts.manrope(
+                      fontSize: 14,
+                      height: 1.45,
+                      color: Brand.text,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 20),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Brand.panel,
+                    borderRadius: BorderRadius.circular(Brand.radius + 6),
+                    border: Border.all(color: Brand.line),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.key_rounded, size: 18, color: Brand.sand),
+                          const SizedBox(width: 8),
                           Text(
-                            widget.userProfile.bio!,
-                            style: TextStyle(
+                            'Public key',
+                            style: GoogleFonts.manrope(
+                              fontWeight: FontWeight.w700,
                               fontSize: 14,
-                              color: isDarkMode 
-                                ? DeltaniumTheme.darkTextPrimaryColor 
-                                : DeltaniumTheme.lightTextPrimaryColor,
+                              color: Brand.text,
                             ),
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            onPressed: () => _copyPublicKey(context),
+                            icon: const Icon(Icons.copy_rounded, size: 18, color: Brand.sand),
+                            tooltip: 'Copy public key',
+                            visualDensity: VisualDensity.compact,
                           ),
                         ],
-                        
-                        const SizedBox(height: 12),
-                        
-                        // Public Key display with copy functionality and format toggle
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: isDarkMode 
-                                ? DeltaniumTheme.surfaceDark.withOpacity(0.3)
-                                : DeltaniumTheme.surfaceLight.withOpacity(0.3),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: isDarkMode
-                                  ? DeltaniumTheme.darkDividerColor
-                                  : DeltaniumTheme.lightDividerColor,
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Brand.moss.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(Brand.radius),
+                          border: Border.all(color: Brand.moss.withValues(alpha: 0.35)),
+                        ),
+                        child: Text(
+                          'Compressed · 66 chars',
+                          style: GoogleFonts.manrope(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Brand.moss,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Brand.inkSoft,
+                          borderRadius: BorderRadius.circular(Brand.radius),
+                        ),
+                        child: Text(
+                          _getCompressedPublicKey(_profile.publicKey),
+                          style: GoogleFonts.manrope(
+                            fontSize: 12,
+                            height: 1.4,
+                            color: Brand.text,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Share this key so others can send you encrypted files and messages.',
+                        style: GoogleFonts.manrope(
+                          fontSize: 12,
+                          height: 1.4,
+                          color: Brand.muted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  'Wallet',
+                  style: GoogleFonts.syne(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: Brand.text,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Brand.panel,
+                    borderRadius: BorderRadius.circular(Brand.radius + 6),
+                    border: Border.all(color: Brand.line),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _walletLoading
+                            ? 'Loading…'
+                            : DFormat.full(_dBalance ?? 0),
+                        style: GoogleFonts.syne(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w800,
+                          color: Brand.sand,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Service credit: 1 D = 1 VND · 1 DLT = 1.000.000 D, backed 1:1 by VND. '
+                        'Top up from 3% fee (bank transfer).',
+                        style: GoogleFonts.manrope(color: Brand.muted, fontSize: 12, height: 1.4),
+                      ),
+                      _usageSummary(),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          FilledButton(
+                            onPressed: _showTopUpDialog,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: Brand.sand,
+                              foregroundColor: Brand.ink,
                             ),
+                            child: const Text('Top up'),
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.key,
-                                    size: 16,
-                                    color: isDarkMode
-                                        ? DeltaniumTheme.primaryTan
-                                        : DeltaniumTheme.primaryBrown,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    'Public Key',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 14,
-                                      color: isDarkMode
-                                          ? DeltaniumTheme.darkTextPrimaryColor
-                                          : DeltaniumTheme.lightTextPrimaryColor,
-                                    ),
-                                  ),
-                                  const Spacer(),
-                                  IconButton(
-                                    onPressed: () => _copyPublicKey(context),
-                                    icon: Icon(
-                                      Icons.copy,
-                                      size: 18,
-                                      color: isDarkMode
-                                          ? DeltaniumTheme.primaryTan
-                                          : DeltaniumTheme.primaryBrown,
-                                    ),
-                                    tooltip: 'Copy Public Key',
-                                    visualDensity: VisualDensity.compact,
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              // Format info
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.green.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  'Compressed (66 chars)',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w500,
-                                    color: Colors.green[700],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              // Public key display
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: isDarkMode
-                                      ? Colors.black.withOpacity(0.3)
-                                      : Colors.white.withOpacity(0.8),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  _getCompressedPublicKey(widget.userProfile.publicKey),
-                                  style: const TextStyle(
-                                    fontFamily: 'monospace',
-                                    fontSize: 11,
-                                    height: 1.3,
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Share this key with others to receive encrypted files. Compressed format saves space.',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontStyle: FontStyle.italic,
-                                  color: isDarkMode
-                                      ? DeltaniumTheme.darkTextSecondaryColor
-                                      : DeltaniumTheme.lightTextSecondaryColor,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        
-                        const SizedBox(height: 16),
-                        
-                        // Stats Row removed per new design
-                        
-                        const SizedBox(height: 24),
-                        
-                        // Account Information Section
-                        Text(
-                          'Account Information',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: isDarkMode 
-                              ? DeltaniumTheme.darkTextPrimaryColor 
-                              : DeltaniumTheme.lightTextPrimaryColor,
-                          ),
-                        ),
-                        
-                        const SizedBox(height: 12),
-                        
-                        _buildInfoItem(
-                          Icons.calendar_today,
-                          'Joined Date',
-                          'January 2023',
-                          isDarkMode,
-                        ),
-                        
-                        _buildInfoItem(
-                          Icons.badge,
-                          'Name',
-                          widget.userProfile.fullName ?? '—',
-                          isDarkMode,
-                        ),
-                        _buildInfoItem(
-                          Icons.cake,
-                          'Birthday',
-                          widget.userProfile.dateOfBirth ?? '—',
-                          isDarkMode,
-                        ),
-                        
-                        const SizedBox(height: 24),
-                        
-                        // Only keep Logout button
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: isDarkMode 
-                                ? DeltaniumTheme.surfaceDark 
-                                : DeltaniumTheme.surfaceLight,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: _buildActionButton(
-                              'Logout',
-                              Icons.logout,
-                              isDarkMode,
-                              () async {
-                                await _handleLogout();
-                              },
-                              isLogout: true,
+                          OutlinedButton(
+                            onPressed: _loadWallet,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Brand.text,
+                              side: const BorderSide(color: Brand.line),
                             ),
+                            child: const Text('Refresh'),
                           ),
-                        ),
-                      ],
+                          OutlinedButton(
+                            onPressed: _showPlanDialog,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Brand.text,
+                              side: const BorderSide(color: Brand.line),
+                            ),
+                            child: const Text('Subscription price'),
+                          ),
+                          OutlinedButton(
+                            onPressed: _showEgressCapDialog,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Brand.text,
+                              side: const BorderSide(color: Brand.line),
+                            ),
+                            child: const Text('Bandwidth cap'),
+                          ),
+                          OutlinedButton(
+                            onPressed: _showRedeemDialog,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Brand.text,
+                              side: const BorderSide(color: Brand.line),
+                            ),
+                            child: const Text('Redeem'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  'Account',
+                  style: GoogleFonts.syne(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: Brand.text,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _infoRow(Icons.badge_outlined, 'Name', _profile.fullName ?? '—'),
+                _infoRow(Icons.cake_outlined, 'Birthday', _formatBirthday(_profile.dateOfBirth)),
+                const SizedBox(height: 28),
+                OutlinedButton.icon(
+                  onPressed: _handleLogout,
+                  icon: const Icon(Icons.logout_rounded, color: Brand.danger),
+                  label: Text(
+                    'Logout',
+                    style: GoogleFonts.manrope(
+                      color: Brand.danger,
+                      fontWeight: FontWeight.w700,
                     ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: Brand.danger.withValues(alpha: 0.35)),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    minimumSize: const Size.fromHeight(48),
                   ),
                 ),
               ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
-  
-  Widget _buildInfoItem(IconData icon, String label, String value, bool isDarkMode) {
+
+  Widget _infoRow(IconData icon, String label, String value) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         children: [
-          Icon(
-            icon,
-            size: 18,
-            color: isDarkMode
-                ? DeltaniumTheme.darkTextSecondaryColor
-                : DeltaniumTheme.lightTextSecondaryColor,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            '$label: ',
-            style: TextStyle(
-              fontWeight: FontWeight.w500,
-              color: isDarkMode
-                  ? DeltaniumTheme.darkTextSecondaryColor
-                  : DeltaniumTheme.lightTextSecondaryColor,
-            ),
-          ),
-          Text(
-            value,
-            style: TextStyle(
-              color: isDarkMode
-                  ? DeltaniumTheme.darkTextPrimaryColor
-                  : DeltaniumTheme.lightTextPrimaryColor,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-  
-  Widget _buildActionButton(String label, IconData icon, bool isDarkMode, VoidCallback onPressed, {bool isLogout = false}) {
-    final Color textColor = isLogout 
-        ? Colors.red 
-        : isDarkMode
-            ? DeltaniumTheme.primaryTan
-            : DeltaniumTheme.primaryBrown;
-            
-    final Color borderColor = isLogout
-        ? Colors.red.withOpacity(0.3)
-        : isDarkMode
-            ? DeltaniumTheme.surfaceDark
-            : DeltaniumTheme.lightDividerColor;
-    
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12.0),
-      child: ElevatedButton.icon(
-        onPressed: onPressed,
-        icon: Icon(icon, size: 18, color: textColor),
-        label: Text(label, style: TextStyle(color: textColor)),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: isDarkMode 
-              ? DeltaniumTheme.black 
-              : DeltaniumTheme.white,
-          foregroundColor: textColor,
-          elevation: 0,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-            side: BorderSide(
-              color: borderColor,
-            ),
-          ),
-          alignment: Alignment.centerLeft,
-        ),
-      ),
-    );
-  }
-  
-  Widget _buildStatItem(String label, String value, bool isDarkMode) {
-    return Expanded(
-      child: Row(
-        children: [
-          Text(
-            value,
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-              color: isDarkMode 
-                ? DeltaniumTheme.darkTextPrimaryColor 
-                : DeltaniumTheme.lightTextPrimaryColor,
-            ),
-          ),
-          const SizedBox(width: 4),
+          Icon(icon, size: 18, color: Brand.muted),
+          const SizedBox(width: 10),
           Text(
             label,
-            style: TextStyle(
-              color: isDarkMode
-                  ? DeltaniumTheme.darkTextSecondaryColor
-                  : DeltaniumTheme.lightTextSecondaryColor,
-              fontSize: 14,
+            style: GoogleFonts.manrope(
+              color: Brand.muted,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const Spacer(),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: GoogleFonts.manrope(
+                color: Brand.text,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],

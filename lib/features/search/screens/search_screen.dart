@@ -1,12 +1,15 @@
-import 'package:flutter/material.dart';
-import 'package:deltanium_app/config/theme.dart';
-import 'package:deltanium_app/models/user_discovery.dart';
-import 'package:deltanium_app/services/user_discovery_service.dart';
-import 'package:deltanium_app/services/chat_service.dart';
-import 'package:deltanium_app/widgets/navigation_menu.dart';
-import 'package:deltanium_app/features/messages/screens/chat_conversation_screen.dart';
-import 'package:go_router/go_router.dart';
 import 'package:deltanium_app/app/router.dart';
+import 'package:deltanium_app/config/brand.dart';
+import 'package:deltanium_app/config/theme.dart';
+import 'package:deltanium_app/features/messages/screens/chat_conversation_screen.dart';
+import 'package:deltanium_app/models/user_discovery.dart';
+import 'package:deltanium_app/services/chat_service.dart';
+import 'package:deltanium_app/services/user_discovery_service.dart';
+import 'package:deltanium_app/widgets/creator_support.dart';
+import 'package:deltanium_app/widgets/navigation_menu.dart';
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -46,19 +49,18 @@ class _SearchScreenState extends State<SearchScreen> with TickerProviderStateMix
   }
   
   void _handleNavigationItemSelected(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-    
-    // Handle navigation based on index
+    setState(() => _selectedIndex = index);
     switch (index) {
-      case 0: // Home
+      case 0:
         context.go(AppRoutes.localUserHome);
         break;
-      case 1: // Search (current page, do nothing)
+      case 1:
         break;
-      case 2: // Profile
+      case 2:
         context.go(AppRoutes.localUserProfile);
+        break;
+      case 3:
+        context.go(AppRoutes.messages);
         break;
     }
   }
@@ -145,17 +147,13 @@ class _SearchScreenState extends State<SearchScreen> with TickerProviderStateMix
           // Update user in search results
           final searchIndex = _searchResults.indexWhere((u) => u.publicKey == user.publicKey);
           if (searchIndex != -1) {
-            _searchResults[searchIndex] = _searchResults[searchIndex].copyWith(
-              isFollowing: !user.isFollowing,
-            );
+            _searchResults[searchIndex] = _withFollow(_searchResults[searchIndex], !user.isFollowing);
           }
           
           // Update user in recent users
           final recentIndex = _recentUsers.indexWhere((u) => u.publicKey == user.publicKey);
           if (recentIndex != -1) {
-            _recentUsers[recentIndex] = _recentUsers[recentIndex].copyWith(
-              isFollowing: !user.isFollowing,
-            );
+            _recentUsers[recentIndex] = _withFollow(_recentUsers[recentIndex], !user.isFollowing);
           }
           
           // Update following list
@@ -164,7 +162,7 @@ class _SearchScreenState extends State<SearchScreen> with TickerProviderStateMix
             _followingUsers.removeWhere((u) => u.publicKey == user.publicKey);
           } else {
             // Add to following list
-            final updatedUser = user.copyWith(isFollowing: true);
+            final updatedUser = _withFollow(user, true);
             _followingUsers.insert(0, updatedUser);
           }
         });
@@ -196,245 +194,155 @@ class _SearchScreenState extends State<SearchScreen> with TickerProviderStateMix
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final isDesktop = screenWidth > 1200;
+    final isDesktop = screenWidth >= 980;
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDarkMode 
-          ? DeltaniumTheme.backgroundDark 
-          : DeltaniumTheme.backgroundLight,
-      drawer: !isDesktop ? Drawer(
-        backgroundColor: isDarkMode 
-            ? DeltaniumTheme.black 
-            : DeltaniumTheme.white,
-        child: NavigationMenu(
-          selectedIndex: _selectedIndex,
-          onItemSelected: (index) {
-            setState(() {
-              _selectedIndex = index;
-            });
-            if (!isDesktop) {
-              Navigator.pop(context);
-            }
-          },
-          handleOwnNavigation: false,
-        ),
-      ) : null,
-      body: Stack(
-        children: [
-          // Background for sidebar
-          Row(
-            children: [
-              if (isDesktop) 
-                Container(
-                  width: 280,
-                  color: isDarkMode ? DeltaniumTheme.black : DeltaniumTheme.white,
-                ),
-              Expanded(
-                child: Container(
-                  color: isDarkMode 
-                      ? DeltaniumTheme.backgroundDark 
-                      : DeltaniumTheme.backgroundLight,
-                ),
+      backgroundColor: Brand.ink,
+      drawer: !isDesktop
+          ? Drawer(
+              backgroundColor: Brand.ink,
+              child: NavigationMenu(
+                selectedIndex: _selectedIndex,
+                onItemSelected: (index) {
+                  Navigator.pop(context);
+                  _handleNavigationItemSelected(index);
+                },
+                handleOwnNavigation: true,
               ),
-            ],
-          ),
-          
-          // Main content layout
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Navigation menu for desktop
-              if (isDesktop)
+            )
+          : null,
+      body: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (isDesktop)
+            SizedBox(
+              width: 248,
+              child: NavigationMenu(
+                selectedIndex: _selectedIndex,
+                onItemSelected: _handleNavigationItemSelected,
+                handleOwnNavigation: true,
+              ),
+            ),
+          if (isDesktop)
+            const VerticalDivider(width: 1, thickness: 1, color: DeltaniumTheme.dividerDark),
+          Expanded(
+            child: Column(
+              children: [
                 Container(
-                  width: 280,
-                  decoration: BoxDecoration(
-                    color: isDarkMode 
-                        ? DeltaniumTheme.black 
-                        : DeltaniumTheme.white,
+                  padding: const EdgeInsets.fromLTRB(12, 12, 16, 12),
+                  decoration: const BoxDecoration(
+                    color: Brand.ink,
                     border: Border(
-                      right: BorderSide(
-                        color: isDarkMode 
-                            ? DeltaniumTheme.darkDividerColor 
-                            : DeltaniumTheme.lightDividerColor,
-                      ),
+                      bottom: BorderSide(color: DeltaniumTheme.dividerDark),
                     ),
                   ),
-                  child: NavigationMenu(
-                    selectedIndex: _selectedIndex,
-                    onItemSelected: (index) {
-                      setState(() {
-                        _selectedIndex = index;
-                      });
-                    },
-                    handleOwnNavigation: false,
-                  ),
-                ),
-              
-              // Main content area
-              Expanded(
-                child: Column(
-                  children: [
-                    // Header with search bar
-                    Container(
-                      color: isDarkMode 
-                          ? DeltaniumTheme.black 
-                          : DeltaniumTheme.white,
-                      padding: const EdgeInsets.all(16),
-                      child: Row(
-                        children: [
-                          // Menu button for mobile
-                          if (!isDesktop)
-                            Builder(
-                              builder: (context) => IconButton(
-                                icon: Icon(
-                                  Icons.menu,
-                                  color: isDarkMode 
-                                      ? DeltaniumTheme.primaryTan 
-                                      : DeltaniumTheme.primaryBrown,
-                                ),
-                                onPressed: () => Scaffold.of(context).openDrawer(),
-                              ),
+                  child: Row(
+                    children: [
+                      if (!isDesktop)
+                        Builder(
+                          builder: (context) => IconButton(
+                            icon: const Icon(Icons.menu_rounded, color: Brand.text),
+                            onPressed: () => Scaffold.of(context).openDrawer(),
+                          ),
+                        ),
+                      Expanded(
+                        child: TextField(
+                          controller: _searchController,
+                          style: GoogleFonts.manrope(color: Brand.text),
+                          decoration: InputDecoration(
+                            hintText: 'Search users…',
+                            hintStyle: GoogleFonts.manrope(color: Brand.muted),
+                            prefixIcon: const Icon(Icons.search_rounded, color: Brand.sand, size: 20),
+                            suffixIcon: _searchController.text.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear_rounded, color: Brand.muted, size: 18),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      _searchUsers('');
+                                    },
+                                  )
+                                : null,
+                            filled: true,
+                            fillColor: Brand.inkSoft,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(Brand.radius + 10),
+                              borderSide: const BorderSide(color: Brand.line),
                             ),
-                          
-                          // Search field
-                          Expanded(
-                            child: Container(
-                              height: 40,
-                              child: TextField(
-                                controller: _searchController,
-                                decoration: InputDecoration(
-                                  hintText: 'Search users...',
-                                  hintStyle: TextStyle(
-                                    color: isDarkMode 
-                                        ? DeltaniumTheme.darkTextSecondaryColor 
-                                        : DeltaniumTheme.lightTextSecondaryColor,
-                                  ),
-                                  prefixIcon: Icon(
-                                    Icons.search,
-                                    color: isDarkMode 
-                                        ? DeltaniumTheme.primaryTan 
-                                        : DeltaniumTheme.primaryBrown,
-                                    size: 20,
-                                  ),
-                                  suffixIcon: _searchController.text.isNotEmpty
-                                      ? IconButton(
-                                          icon: Icon(
-                                            Icons.clear,
-                                            color: isDarkMode 
-                                                ? DeltaniumTheme.darkTextSecondaryColor 
-                                                : DeltaniumTheme.lightTextSecondaryColor,
-                                            size: 20,
-                                          ),
-                                          onPressed: () {
-                                            _searchController.clear();
-                                            _searchUsers('');
-                                          },
-                                        )
-                                      : null,
-                                  filled: true,
-                                  fillColor: isDarkMode 
-                                      ? DeltaniumTheme.backgroundDark 
-                                      : DeltaniumTheme.backgroundLight,
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(20),
-                                    borderSide: BorderSide(
-                                      color: isDarkMode 
-                                          ? DeltaniumTheme.darkDividerColor 
-                                          : DeltaniumTheme.lightDividerColor,
-                                    ),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(20),
-                                    borderSide: BorderSide(
-                                      color: isDarkMode 
-                                          ? DeltaniumTheme.primaryTan 
-                                          : DeltaniumTheme.primaryBrown,
-                                      width: 2,
-                                    ),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(20),
-                                    borderSide: BorderSide(
-                                      color: isDarkMode 
-                                          ? DeltaniumTheme.darkDividerColor 
-                                          : DeltaniumTheme.lightDividerColor,
-                                    ),
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 8,
-                                  ),
-                                ),
-                                style: TextStyle(
-                                  color: isDarkMode 
-                                      ? DeltaniumTheme.darkTextPrimaryColor 
-                                      : DeltaniumTheme.lightTextPrimaryColor,
-                                ),
-                                onChanged: (value) {
-                                  setState(() {}); // Rebuild to show/hide clear button
-                                  if (value.trim().isNotEmpty) {
-                                    _searchUsers(value);
-                                  } else {
-                                    setState(() {
-                                      _searchResults = [];
-                                      _isSearching = false;
-                                    });
-                                  }
-                                },
-                              ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(Brand.radius + 10),
+                              borderSide: const BorderSide(color: Brand.line),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(Brand.radius + 10),
+                              borderSide: const BorderSide(color: Brand.sand, width: 1.4),
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-                    
-                    // Tab bar (only show when not searching) - remove Following Posts
-                    if (_searchController.text.isEmpty)
-                      Container(
-                        color: isDarkMode 
-                            ? DeltaniumTheme.black 
-                            : DeltaniumTheme.white,
-                        child: TabBar(
-                          controller: _tabController,
-                          indicatorColor: isDarkMode 
-                              ? DeltaniumTheme.primaryTan 
-                              : DeltaniumTheme.primaryBrown,
-                          labelColor: isDarkMode 
-                              ? DeltaniumTheme.primaryTan 
-                              : DeltaniumTheme.primaryBrown,
-                          unselectedLabelColor: isDarkMode 
-                              ? DeltaniumTheme.darkTextSecondaryColor 
-                              : DeltaniumTheme.lightTextSecondaryColor,
-                          tabs: const [
-                            Tab(text: 'Recent Users'),
-                            Tab(text: 'Discover'),
-                          ],
+                          onChanged: (value) {
+                            setState(() {});
+                            if (value.trim().isNotEmpty) {
+                              _searchUsers(value);
+                            } else {
+                              setState(() {
+                                _searchResults = [];
+                                _isSearching = false;
+                              });
+                            }
+                          },
                         ),
                       ),
-                    
-                    // Main content
-                    Expanded(
-                      child: _searchController.text.isNotEmpty
-                          ? _buildSearchResults(isDarkMode)
-                          : TabBarView(
-                              controller: _tabController,
-                              children: [
-                                _buildRecentUsers(isDarkMode),
-                                _buildDiscoverSection(isDarkMode),
-                              ],
-                            ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
+                if (_searchController.text.isEmpty)
+                  Container(
+                    decoration: const BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(color: DeltaniumTheme.dividerDark),
+                      ),
+                    ),
+                    child: TabBar(
+                      controller: _tabController,
+                      labelColor: Brand.sand,
+                      unselectedLabelColor: Brand.muted,
+                      indicatorColor: Brand.sand,
+                      dividerColor: Colors.transparent,
+                      labelStyle: GoogleFonts.manrope(fontWeight: FontWeight.w700),
+                      unselectedLabelStyle: GoogleFonts.manrope(fontWeight: FontWeight.w500),
+                      tabs: const [
+                        Tab(text: 'Recent Users'),
+                        Tab(text: 'Discover'),
+                      ],
+                    ),
+                  ),
+                Expanded(
+                  child: ColoredBox(
+                    color: Brand.inkSoft,
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 720),
+                        child: _searchController.text.isNotEmpty
+                            ? _buildSearchResults(isDarkMode)
+                            : TabBarView(
+                                controller: _tabController,
+                                children: [
+                                  _buildRecentUsers(isDarkMode),
+                                  _buildDiscoverSection(isDarkMode),
+                                ],
+                              ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
-  
+
   Widget _buildSearchResults(bool isDarkMode) {
     if (_isSearching) {
       return const Center(
@@ -713,212 +621,153 @@ class _SearchScreenState extends State<SearchScreen> with TickerProviderStateMix
   }
 
   Widget _buildUserCard(DiscoveredUser user, bool isDarkMode) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 1,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+    final initial = user.displayName?.isNotEmpty == true
+        ? user.displayName![0].toUpperCase()
+        : user.shortPublicKey.substring(0, 2).toUpperCase();
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Brand.panel,
+        borderRadius: BorderRadius.circular(Brand.radius + 6),
+        border: Border.all(color: Brand.line),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Avatar
-            CircleAvatar(
-              radius: 24,
-              backgroundColor: isDarkMode 
-                  ? DeltaniumTheme.primaryTan 
-                  : DeltaniumTheme.primaryBrown,
-              backgroundImage: user.avatarUrl != null 
-                  ? NetworkImage(user.avatarUrl!) 
-                  : null,
-              child: user.avatarUrl == null
-                  ? Text(
-                      user.displayName?.isNotEmpty == true 
-                          ? user.displayName![0].toUpperCase()
-                          : user.shortPublicKey.substring(0, 2).toUpperCase(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    )
-                  : null,
-            ),
-            const SizedBox(width: 16),
-            
-            // User info
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Display name
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            radius: 22,
+            backgroundColor: Brand.sand.withValues(alpha: 0.18),
+            backgroundImage:
+                user.avatarUrl != null ? NetworkImage(user.avatarUrl!) : null,
+            child: user.avatarUrl == null
+                ? Text(
+                    initial,
+                    style: GoogleFonts.syne(
+                      color: Brand.sand,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  )
+                : null,
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  user.displayName ?? user.shortPublicKey,
+                  style: GoogleFonts.manrope(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: Brand.text,
+                  ),
+                ),
+                Text(
+                  user.shortPublicKey,
+                  style: GoogleFonts.manrope(fontSize: 12, color: Brand.muted),
+                ),
+                if (user.bio != null) ...[
+                  const SizedBox(height: 6),
                   Text(
-                    user.displayName ?? user.shortPublicKey,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: isDarkMode 
-                          ? DeltaniumTheme.darkTextPrimaryColor 
-                          : DeltaniumTheme.lightTextPrimaryColor,
+                    user.bio!,
+                    style: GoogleFonts.manrope(
+                      fontSize: 13,
+                      height: 1.4,
+                      color: Brand.text,
                     ),
-                  ),
-                  
-                  // Public key (shortened)
-                  Text(
-                    user.shortPublicKey,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontFamily: 'monospace',
-                      color: isDarkMode 
-                          ? DeltaniumTheme.darkTextSecondaryColor 
-                          : DeltaniumTheme.lightTextSecondaryColor,
-                    ),
-                  ),
-                  
-                  // Bio
-                  if (user.bio != null) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      user.bio!,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: isDarkMode 
-                            ? DeltaniumTheme.darkTextPrimaryColor 
-                            : DeltaniumTheme.lightTextPrimaryColor,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                  
-                  const SizedBox(height: 8),
-                  
-                  // Stats row (hide posts)
-                  Row(
-                    children: [
-                      _buildStatChip('${user.followersCount}', 'followers', isDarkMode),
-                      const SizedBox(width: 8),
-                      _buildStatChip('${user.followingCount}', 'following', isDarkMode),
-                    ],
-                  ),
-                  
-                  const SizedBox(height: 8),
-                  
-                  // Join date and last active
-                  Row(
-                    children: [
-                      Text(
-                        user.formattedJoinDate,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: isDarkMode 
-                              ? DeltaniumTheme.darkTextSecondaryColor 
-                              : DeltaniumTheme.lightTextSecondaryColor,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Text(
-                        user.lastActiveFormatted,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: isDarkMode 
-                              ? DeltaniumTheme.darkTextSecondaryColor 
-                              : DeltaniumTheme.lightTextSecondaryColor,
-                        ),
-                      ),
-                    ],
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
-              ),
-            ),
-            
-            // Action buttons
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Message button
-                IconButton(
-                  icon: Icon(
-                    Icons.mail_outline,
-                    color: isDarkMode 
-                        ? DeltaniumTheme.primaryTan 
-                        : DeltaniumTheme.primaryBrown,
-                    size: 20,
-                  ),
-                  onPressed: () => _startChatWithUser(user),
-                  tooltip: 'Send message',
-                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                  padding: EdgeInsets.zero,
+                const SizedBox(height: 8),
+                // Wrap, not Row: on narrow cards the chips used to overflow under the action icons.
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    _buildStatChip('${user.followersCount}', 'followers'),
+                    _buildStatChip('${user.followingCount}', 'following'),
+                  ],
                 ),
-                const SizedBox(height: 4),
-                // Follow button
-                OutlinedButton(
-                  onPressed: () => _toggleFollowUser(user),
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(
-                      color: user.isFollowing
-                          ? Colors.red
-                          : (isDarkMode 
-                              ? DeltaniumTheme.primaryTan 
-                              : DeltaniumTheme.primaryBrown),
-                    ),
-                    foregroundColor: user.isFollowing
-                        ? Colors.red
-                        : (isDarkMode 
-                            ? DeltaniumTheme.primaryTan 
-                            : DeltaniumTheme.primaryBrown),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  ),
-                  child: Text(
-                    user.isFollowing ? 'Unfollow' : 'Follow',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                const SizedBox(height: 6),
+                Text(
+                  '${user.formattedJoinDate} · ${user.lastActiveFormatted}',
+                  style: GoogleFonts.manrope(fontSize: 12, color: Brand.muted),
                 ),
               ],
             ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 8),
+          Column(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.mail_outline_rounded, color: Brand.sand, size: 20),
+                onPressed: () => _startChatWithUser(user),
+                tooltip: 'Send message',
+              ),
+              IconButton(
+                icon: const Icon(Icons.volunteer_activism_outlined, color: Brand.sand, size: 20),
+                onPressed: () => CreatorSupport.showTipDialog(context,
+                    toPublicKey: user.publicKey, name: user.displayName ?? user.shortPublicKey),
+                tooltip: 'Tip',
+              ),
+              IconButton(
+                icon: const Icon(Icons.workspace_premium_outlined, color: Brand.sand, size: 20),
+                onPressed: () => CreatorSupport.showSubscribeDialog(context,
+                    creatorPublicKey: user.publicKey, name: user.displayName ?? user.shortPublicKey),
+                tooltip: 'Subscribe',
+              ),
+              OutlinedButton(
+                onPressed: () => _toggleFollowUser(user),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(
+                    color: user.isFollowing
+                        ? Brand.danger.withValues(alpha: 0.5)
+                        : Brand.line,
+                  ),
+                  foregroundColor: user.isFollowing ? Brand.danger : Brand.sand,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  minimumSize: const Size(0, 34),
+                ),
+                child: Text(
+                  user.isFollowing ? 'Unfollow' : 'Follow',
+                  style: GoogleFonts.manrope(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
-  
-  Widget _buildStatChip(String value, String label, bool isDarkMode) {
+
+  /// Follow state plus the follower count shown on the card, so it changes right away.
+  DiscoveredUser _withFollow(DiscoveredUser u, bool following) {
+    if (u.isFollowing == following) return u;
+    final count = u.followersCount + (following ? 1 : -1);
+    return u.copyWith(isFollowing: following, followersCount: count < 0 ? 0 : count);
+  }
+
+  Widget _buildStatChip(String value, String label) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: isDarkMode 
-            ? DeltaniumTheme.surfaceDark.withOpacity(0.5)
-            : DeltaniumTheme.surfaceLight.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(12),
+        color: Brand.inkSoft,
+        borderRadius: BorderRadius.circular(Brand.radius),
+        border: Border.all(color: Brand.line),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: isDarkMode 
-                  ? DeltaniumTheme.darkTextPrimaryColor 
-                  : DeltaniumTheme.lightTextPrimaryColor,
-            ),
-          ),
-          const SizedBox(width: 2),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              color: isDarkMode 
-                  ? DeltaniumTheme.darkTextSecondaryColor 
-                  : DeltaniumTheme.lightTextSecondaryColor,
-            ),
-          ),
-        ],
+      child: Text(
+        '$value $label',
+        style: GoogleFonts.manrope(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: Brand.muted,
+        ),
       ),
     );
   }

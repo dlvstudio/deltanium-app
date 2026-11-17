@@ -491,6 +491,7 @@ class _LoginScreenState extends State<LoginScreen> {
     ).catchError((e) {
       AppLogger.log('❌ LOGIN: Background rekey sync error: $e');
     });
+    RekeySyncService.syncSubscriberRekeys(mnemonic: mnemonic, userPublicKey: publicKey);
   }
 
   @override

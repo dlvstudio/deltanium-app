@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:deltanium_app/config/theme.dart';
 import 'package:http/http.dart' as http;
+import 'package:deltanium_app/services/egress_receipt_service.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:deltanium_app/services/crypto_service.dart';
@@ -307,7 +308,7 @@ class _RelatedFilesWidgetState extends State<RelatedFilesWidget> {
       final dataToSign = '$method$metadataPath$timestamp$bodyHash';
       final signature = await CryptoService.sign(dataToSign, userMnemonic);
       
-      var fileMetadataResponse = await http.get(
+      var fileMetadataResponse = await BlockHttp.get(
         Uri.parse('$nodeEndpoint$metadataPath'),
         headers: {
           'X-User-PubKey': CryptoService.normalizePublicKey(userPublicKey),
@@ -369,7 +370,7 @@ class _RelatedFilesWidgetState extends State<RelatedFilesWidget> {
           final listDataToSign = '$listMethod$listPath$listTimestamp$listBodyHash';
           final listSignature = await CryptoService.sign(listDataToSign, userMnemonic);
           
-          final listResponse = await http.get(
+          final listResponse = await BlockHttp.get(
             Uri.parse('$nodeEndpoint$listPath'),
             headers: {
               'X-User-PubKey': CryptoService.normalizePublicKey(userPublicKey),
@@ -422,7 +423,7 @@ class _RelatedFilesWidgetState extends State<RelatedFilesWidget> {
               final newDataToSign = '$listMethod$newMetadataPath$newTimestamp$listBodyHash';
               final newSignature = await CryptoService.sign(newDataToSign, userMnemonic);
               
-              fileMetadataResponse = await http.get(
+              fileMetadataResponse = await BlockHttp.get(
                 Uri.parse('$nodeEndpoint$newMetadataPath'),
                 headers: {
                   'X-User-PubKey': CryptoService.normalizePublicKey(userPublicKey),
@@ -479,7 +480,7 @@ class _RelatedFilesWidgetState extends State<RelatedFilesWidget> {
       final blockDataToSign = '$method$blockPath$blockTimestamp$bodyHash';
       final blockSignature = await CryptoService.sign(blockDataToSign, userMnemonic);
       
-      final metadataResponse = await http.get(
+      final metadataResponse = await BlockHttp.get(
         Uri.parse('$nodeEndpoint$blockPath'),
         headers: {
           'X-User-PubKey': CryptoService.normalizePublicKey(userPublicKey),
@@ -521,7 +522,7 @@ class _RelatedFilesWidgetState extends State<RelatedFilesWidget> {
         final contentBlockDataToSign = '$method$contentBlockPath$contentBlockTimestamp$bodyHash';
         final contentBlockSignature = await CryptoService.sign(contentBlockDataToSign, userMnemonic);
         
-        final contentBlockResponse = await http.get(
+        final contentBlockResponse = await BlockHttp.get(
           Uri.parse('$nodeEndpoint$contentBlockPath'), // <--- always use metaNodeEndpoint
           headers: {
             'X-User-PubKey': CryptoService.normalizePublicKey(userPublicKey),
@@ -590,7 +591,7 @@ class _RelatedFilesWidgetState extends State<RelatedFilesWidget> {
       final blockDataToSign = '$method$blockPath$blockTimestamp$bodyHash';
       final blockSignature = await CryptoService.sign(blockDataToSign, userMnemonic);
       
-      final metadataResponse = await http.get(
+      final metadataResponse = await BlockHttp.get(
         Uri.parse('$nodeEndpoint$blockPath'),
         headers: {
           'X-User-PubKey': CryptoService.normalizePublicKey(userPublicKey),
@@ -621,7 +622,7 @@ class _RelatedFilesWidgetState extends State<RelatedFilesWidget> {
         final contentBlockDataToSign = '$method$contentBlockPath$contentBlockTimestamp$bodyHash';
         final contentBlockSignature = await CryptoService.sign(contentBlockDataToSign, userMnemonic);
         
-        final contentBlockResponse = await http.get(
+        final contentBlockResponse = await BlockHttp.get(
           Uri.parse('$nodeEndpoint$contentBlockPath'),
           headers: {
             'X-User-PubKey': CryptoService.normalizePublicKey(userPublicKey),

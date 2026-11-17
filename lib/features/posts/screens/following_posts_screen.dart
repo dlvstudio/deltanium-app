@@ -12,6 +12,7 @@ import 'dart:typed_data';
 import 'dart:math' as math;
 import 'package:deltanium_app/config/constants.dart';
 import 'package:deltanium_app/services/app_logger.dart';
+import 'package:deltanium_app/services/store_node_directory.dart';
 
 
 class FollowingPostsScreen extends StatefulWidget {
@@ -102,100 +103,103 @@ class _FollowingPostsScreenState extends State<FollowingPostsScreen> {
     });
 
     try {
-      // Use the default node directly
-      const nodeEndpoint = 'http://localhost:5001';
+      final storeNodes = await StoreNodeDirectory.listNodes();
       setState(() {
-        _loadingMessage = 'Loading posts from followers...';
+        _loadingMessage = 'Loading posts from ${storeNodes.length} store node(s)...';
       });
 
       final nodeStartTime = _startTiming('Load Following Posts');
-      
-      // Get posts with shareType = "followers"
-      final timestamp = (DateTime.now().millisecondsSinceEpoch / 1000).floor().toString();
-      final method = 'GET';
-      final path = '/api/post/followers-feed';
-      final bodyHash = ''; // Empty body for GET request
-      
-      // Create data to sign
-      final dataToSign = '$method$path$timestamp$bodyHash';
-      
-      // Generate signature
-      final signature = await CryptoService.sign(dataToSign, _userMnemonic!);
-      
-      final _httpStart = DateTime.now();
-      AppLogger.log('🌐 HTTP GET ' + '$nodeEndpoint$path' + ' START ' + _httpStart.toIso8601String());
-      final postsResponse = await http.get(
-        Uri.parse('$nodeEndpoint$path'),
-        headers: {
-          'X-User-PubKey': CryptoService.normalizePublicKey(_userPublicKey!),
-          'X-Timestamp': timestamp,
-          'X-Signature': signature,
-        },
-      );
-      AppLogger.log('🌐 HTTP GET ' + '$nodeEndpoint$path' + ' END ' + DateTime.now().toIso8601String() + ' (' + DateTime.now().difference(_httpStart).inMilliseconds.toString() + 'ms) code=' + postsResponse.statusCode.toString());
-      
-      _endTiming('Load Following Posts', nodeStartTime);
+      final Map<String, List<PostMetadata>> postsByNode = {};
+      var anySuccess = false;
+      final List<String> errors = [];
 
-      if (postsResponse.statusCode == 200) {
-        final responseBody = json.decode(postsResponse.body);
-        AppLogger.log('Following posts response: $responseBody');
-        
-        // Handle the API response format
-        List<dynamic> postsJson;
-        if (responseBody is Map<String, dynamic> && responseBody.containsKey('posts')) {
-          postsJson = responseBody['posts'] as List<dynamic>;
-          AppLogger.log('Received ${postsJson.length} following posts');
-        } else if (responseBody is List<dynamic>) {
-          postsJson = responseBody;
-          AppLogger.log('Received ${postsJson.length} following posts (direct array)');
-        } else {
-          throw Exception('Unexpected response format: ${responseBody.runtimeType}');
-        }
+      for (final node in storeNodes) {
+        final nodeEndpoint = node['endpoint'] as String;
+        final nodeId = node['id'] as String;
 
-        // Try to decrypt each post
-        final List<PostMetadata> decryptedPosts = [];
-        
-        for (final post in postsJson) {
-          try {
-            // Create PostMetadata object using fromJson factory
-            final postMetadata = PostMetadata.fromJson(post as Map<String, dynamic>);
-            
-            final decryptedPost = await MyPostsScreen.tryDecryptPostStatic(
-              postMetadata,
-              nodeEndpoint,
-              _userMnemonic!,
-              currentUserPublicKey: _userPublicKey!,
-            );
-            
-            if (decryptedPost != null) {
-              decryptedPosts.add(decryptedPost);
-            }
-          } catch (e) {
-            AppLogger.log('Failed to process post: $e');
-            // Continue with next post
+        try {
+          final timestamp = (DateTime.now().millisecondsSinceEpoch / 1000).floor().toString();
+          const method = 'GET';
+          const path = '/api/post/followers-feed';
+          const bodyHash = '';
+          final dataToSign = '$method$path$timestamp$bodyHash';
+          final signature = await CryptoService.sign(dataToSign, _userMnemonic!);
+
+          final httpStart = DateTime.now();
+          AppLogger.log('🌐 HTTP GET $nodeEndpoint$path START ${httpStart.toIso8601String()}');
+          final postsResponse = await http.get(
+            Uri.parse('$nodeEndpoint$path'),
+            headers: {
+              'X-User-PubKey': CryptoService.normalizePublicKey(_userPublicKey!),
+              'X-Timestamp': timestamp,
+              'X-Signature': signature,
+            },
+          );
+          AppLogger.log(
+            '🌐 HTTP GET $nodeEndpoint$path END ${DateTime.now().toIso8601String()} '
+            '(${DateTime.now().difference(httpStart).inMilliseconds}ms) code=${postsResponse.statusCode}',
+          );
+
+          if (postsResponse.statusCode != 200) {
+            errors.add('$nodeEndpoint → HTTP ${postsResponse.statusCode}');
+            continue;
           }
-        }
 
-        setState(() {
-          // Provide node mapping so UI can resolve endpoint for image downloads
-          _storeNodes = [
-            {
-              'id': 'main',
-              'endpoint': nodeEndpoint,
-            }
-          ];
-          _postsByNode = {'main': decryptedPosts};
-          _isLoading = false;
-          
-          if (_loadStartTime != null) {
-            final totalTime = DateTime.now().difference(_loadStartTime!).inMilliseconds;
-            _logTiming('Total Load Time', totalTime);
+          anySuccess = true;
+          final responseBody = json.decode(postsResponse.body);
+          late final List<dynamic> postsJson;
+          if (responseBody is Map<String, dynamic> && responseBody.containsKey('posts')) {
+            postsJson = responseBody['posts'] as List<dynamic>;
+          } else if (responseBody is List<dynamic>) {
+            postsJson = responseBody;
+          } else {
+            errors.add('$nodeEndpoint → unexpected response format');
+            continue;
           }
-        });
-      } else {
-        throw Exception('Failed to load following posts: ${postsResponse.statusCode}');
+
+          final List<PostMetadata> decryptedPosts = [];
+          for (final post in postsJson) {
+            try {
+              final postMetadata = PostMetadata.fromJson(post as Map<String, dynamic>);
+              final decryptedPost = await MyPostsScreen.tryDecryptPostStatic(
+                postMetadata,
+                nodeEndpoint,
+                _userMnemonic!,
+                currentUserPublicKey: _userPublicKey!,
+              );
+              if (decryptedPost != null) {
+                decryptedPosts.add(decryptedPost);
+              }
+            } catch (e) {
+              AppLogger.log('Failed to process post from $nodeEndpoint: $e');
+            }
+          }
+          postsByNode[nodeId] = decryptedPosts;
+        } catch (e) {
+          AppLogger.log('Error loading followers-feed from $nodeEndpoint: $e');
+          errors.add('$nodeEndpoint → $e');
+        }
       }
 
+      _endTiming('Load Following Posts', nodeStartTime);
+
+      if (!anySuccess) {
+        throw Exception(
+          errors.isEmpty
+              ? 'No store nodes returned following posts'
+              : errors.join('; '),
+        );
+      }
+
+      setState(() {
+        _storeNodes = storeNodes;
+        _postsByNode = postsByNode;
+        _isLoading = false;
+        if (_loadStartTime != null) {
+          final totalTime = DateTime.now().difference(_loadStartTime!).inMilliseconds;
+          _logTiming('Total Load Time', totalTime);
+        }
+      });
     } catch (e) {
       AppLogger.log('Error loading following posts: $e');
       setState(() {
@@ -517,19 +521,7 @@ class _FollowingPostsScreenState extends State<FollowingPostsScreen> {
 
   Future<List<Map<String, dynamic>>> _fetchAvailableNodes() async {
     try {
-      final _httpStart = DateTime.now();
-      AppLogger.log('🌐 HTTP GET /api/storenode/list START ' + _httpStart.toIso8601String());
-      final storeNodesResponse = await http.get(
-        Uri.parse('${AppConstants.apiBaseUrl}/storenode/list'),
-      );
-      AppLogger.log('🌐 HTTP GET /api/storenode/list END ' + DateTime.now().toIso8601String() + ' (' + DateTime.now().difference(_httpStart).inMilliseconds.toString() + 'ms) code=' + storeNodesResponse.statusCode.toString());
-
-      if (storeNodesResponse.statusCode != 200) {
-        throw Exception('Failed to fetch storage nodes');
-      }
-
-      final List<dynamic> storeNodesJson = json.decode(storeNodesResponse.body);
-      return storeNodesJson.map((node) => Map<String, dynamic>.from(node)).toList();
+      return await StoreNodeDirectory.listNodes(requireNonEmpty: false);
     } catch (e) {
       AppLogger.log('Error fetching storage nodes: $e');
       return [];

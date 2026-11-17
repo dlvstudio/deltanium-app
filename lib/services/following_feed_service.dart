@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:deltanium_app/services/egress_receipt_service.dart';
 import 'package:deltanium_app/services/auth_service.dart';
 import 'package:deltanium_app/services/crypto_service.dart';
 import 'package:deltanium_app/models/user_discovery.dart';
@@ -8,6 +9,7 @@ import 'package:deltanium_app/services/pre_service.dart';
 import 'package:deltanium_app/features/posts/screens/my_posts_screen.dart';
 import 'package:deltanium_app/config/constants.dart';
 import 'package:deltanium_app/services/app_logger.dart';
+import 'package:deltanium_app/services/store_node_directory.dart';
 
 
 class FollowingPost {
@@ -59,12 +61,7 @@ class FollowingFeedService {
       final mnemonic = authInfo['mnemonic'] as String;
 
       // 2. Fetch store nodes from central API
-      final nodesResponse = await http.get(Uri.parse('$_apiBaseUrl/storenode/list'));
-      if (nodesResponse.statusCode != 200) {
-        throw Exception('Failed to fetch store nodes');
-      }
-      final List<dynamic> nodesJson = json.decode(nodesResponse.body);
-      final List<String> nodeEndpoints = nodesJson.map<String>((node) => node['endpoint'] as String).toList();
+      final nodeEndpoints = await StoreNodeDirectory.listEndpoints();
       AppLogger.log('🗂️ Found ${nodeEndpoints.length} store nodes');
 
       List<FollowingPost> allPosts = [];
@@ -78,7 +75,7 @@ class FollowingFeedService {
           final dataToSign = '$method$path$timestamp$bodyHash';
           final signature = await CryptoService.sign(dataToSign, mnemonic);
 
-          final response = await http.get(
+          final response = await BlockHttp.get(
             Uri.parse(url),
             headers: {
               'X-User-PubKey': CryptoService.normalizePublicKey(currentUserPubKey),
@@ -190,7 +187,7 @@ class FollowingFeedService {
       final dataToSign = '$method$path$timestamp$bodyHash';
       final signature = await CryptoService.sign(dataToSign, mnemonic);
       
-      final metadataResponse = await http.get(
+      final metadataResponse = await BlockHttp.get(
         Uri.parse('$nodeEndpoint$path'),
         headers: {
           'X-User-PubKey': CryptoService.normalizePublicKey(currentUserPubKey),
@@ -211,7 +208,7 @@ class FollowingFeedService {
       final contentDataToSign = '$method$contentPath$timestamp$bodyHash';
       final contentSignature = await CryptoService.sign(contentDataToSign, mnemonic);
       
-      final contentResponse = await http.get(
+      final contentResponse = await BlockHttp.get(
         Uri.parse('$nodeEndpoint$contentPath'),
         headers: {
           'X-User-PubKey': CryptoService.normalizePublicKey(currentUserPubKey),
@@ -377,7 +374,7 @@ class FollowingFeedService {
           final metaPath = '/api/file/block/$firstBlockId'; // direct block by ID
           const bodyHash0 = '';
           final sign0 = await CryptoService.sign('$method0$metaPath$ts0$bodyHash0', mnemonic);
-          final metaResp = await http.get(
+          final metaResp = await BlockHttp.get(
             Uri.parse('$nodeEndpoint$metaPath'),
             headers: {
               'X-User-PubKey': CryptoService.normalizePublicKey(currentUserPubKey),
@@ -407,7 +404,7 @@ class FollowingFeedService {
           final contentPath = '/api/file/block/$firstContentBlockId';
           const bodyHash1 = '';
           final sign1 = await CryptoService.sign('$method1$contentPath$ts1$bodyHash1', mnemonic);
-          final contentResp = await http.get(
+          final contentResp = await BlockHttp.get(
             Uri.parse('$nodeEndpoint$contentPath'),
             headers: {
               'X-User-PubKey': CryptoService.normalizePublicKey(currentUserPubKey),

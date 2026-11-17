@@ -1,13 +1,16 @@
 import 'dart:async';
-import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
-import 'package:deltanium_app/services/chat_service.dart';
-import 'package:deltanium_app/services/auth_service.dart';
-import 'package:deltanium_app/services/app_logger.dart';
-import 'package:deltanium_app/config/theme.dart';
+
 import 'package:deltanium_app/app/router.dart';
+import 'package:deltanium_app/config/brand.dart';
+import 'package:deltanium_app/config/theme.dart';
 import 'package:deltanium_app/features/messages/screens/chat_conversation_screen.dart';
 import 'package:deltanium_app/features/messages/widgets/conversation_tile.dart';
+import 'package:deltanium_app/services/app_logger.dart';
+import 'package:deltanium_app/services/auth_service.dart';
+import 'package:deltanium_app/services/chat_service.dart';
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class MessagesScreen extends StatefulWidget {
   const MessagesScreen({super.key});
@@ -180,16 +183,14 @@ class _MessagesScreenState extends State<MessagesScreen> {
                 );
                 if (conv != null && mounted) {
                   final convId = conv['conversationId'] ?? conv['ConversationId'] ?? '';
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ChatConversationScreen(
-                        conversationId: convId,
-                        otherPubKey: recipientPubKey,
-                        otherName: 'User',
-                      ),
-                    ),
-                  ).then((_) => _loadConversations());
+                  // The create response has no display name; the conversation list does.
+                  final listed = await ChatService.getConversations();
+                  if (!mounted) return;
+                  final match = listed.firstWhere(
+                    (c) => (c['conversationId'] ?? c['ConversationId']) == convId,
+                    orElse: () => {'conversationId': convId},
+                  );
+                  _openConversation({...match, 'otherParticipantPubKey': recipientPubKey});
                 }
               },
               style: ElevatedButton.styleFrom(
@@ -211,78 +212,103 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    final primaryColor = isDarkMode ? DeltaniumTheme.primaryTan : DeltaniumTheme.primaryBrown;
-    final bgColor = isDarkMode ? DeltaniumTheme.backgroundDark : DeltaniumTheme.backgroundLight;
-    final surfaceColor = isDarkMode ? DeltaniumTheme.black : DeltaniumTheme.white;
-    final textPrimary = isDarkMode ? DeltaniumTheme.darkTextPrimaryColor : DeltaniumTheme.lightTextPrimaryColor;
-    final textSecondary = isDarkMode ? DeltaniumTheme.darkTextSecondaryColor : DeltaniumTheme.lightTextSecondaryColor;
-
     return Scaffold(
-      backgroundColor: bgColor,
+      backgroundColor: Brand.ink,
       appBar: AppBar(
-        backgroundColor: surfaceColor,
+        backgroundColor: Brand.ink,
         elevation: 0,
+        scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: textPrimary),
+          icon: const Icon(Icons.arrow_back_rounded, color: Brand.text),
           onPressed: () => context.go(AppRoutes.localUserHome),
         ),
         title: Text(
           'Messages',
-          style: TextStyle(
-            color: textPrimary,
-            fontWeight: FontWeight.bold,
+          style: GoogleFonts.syne(
+            color: Brand.text,
+            fontWeight: FontWeight.w700,
+            fontSize: 20,
           ),
         ),
-        iconTheme: IconThemeData(color: textPrimary),
         actions: [
           IconButton(
-            icon: Icon(Icons.edit_square, color: primaryColor),
+            icon: const Icon(Icons.edit_square, color: Brand.sand),
             onPressed: _startNewConversation,
             tooltip: 'New message',
           ),
         ],
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(1),
+          child: Divider(height: 1, thickness: 1, color: DeltaniumTheme.dividerDark),
+        ),
       ),
       body: _isLoading
-          ? Center(child: CircularProgressIndicator(color: primaryColor))
+          ? const Center(child: CircularProgressIndicator(color: Brand.sand))
           : _conversations.isEmpty
               ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.chat_bubble_outline, size: 64, color: textSecondary),
-                      const SizedBox(height: 16),
-                      Text(
-                        'No messages yet',
-                        style: TextStyle(color: textPrimary, fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Start a conversation by tapping the compose button',
-                        style: TextStyle(color: textSecondary, fontSize: 14),
-                      ),
-                      const SizedBox(height: 24),
-                      ElevatedButton.icon(
-                        onPressed: _startNewConversation,
-                        icon: const Icon(Icons.edit, size: 18),
-                        label: const Text('New Message'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: primaryColor,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(24),
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 72,
+                          height: 72,
+                          decoration: BoxDecoration(
+                            color: Brand.panel,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: Brand.line),
+                          ),
+                          child: const Icon(
+                            Icons.chat_bubble_outline_rounded,
+                            size: 32,
+                            color: Brand.sand,
                           ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 20),
+                        Text(
+                          'No messages yet',
+                          style: GoogleFonts.syne(
+                            color: Brand.text,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Start an encrypted conversation with someone’s public key.',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.manrope(
+                            color: Brand.muted,
+                            fontSize: 14,
+                            height: 1.45,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        FilledButton.icon(
+                          onPressed: _startNewConversation,
+                          icon: const Icon(Icons.edit_rounded, size: 18),
+                          label: const Text('New message'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Brand.sand,
+                            foregroundColor: Brand.ink,
+                            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 )
               : RefreshIndicator(
                   onRefresh: _loadConversations,
-                  color: primaryColor,
-                  child: ListView.builder(
+                  color: Brand.sand,
+                  child: ListView.separated(
                     itemCount: _conversations.length,
+                    separatorBuilder: (_, __) => const Divider(
+                      height: 1,
+                      thickness: 1,
+                      color: DeltaniumTheme.dividerDark,
+                    ),
                     itemBuilder: (context, index) {
                       final conv = _conversations[index];
                       return ConversationTile(

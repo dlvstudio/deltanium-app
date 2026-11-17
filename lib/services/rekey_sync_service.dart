@@ -6,6 +6,7 @@ import 'package:deltanium_app/config/constants.dart';
 import 'package:deltanium_app/services/app_logger.dart';
 import 'package:deltanium_app/services/crypto_service.dart';
 import 'package:deltanium_app/services/pre_ffi.dart';
+import 'package:deltanium_app/services/wallet_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:bip39/bip39.dart' as bip39;
 import 'package:crypto/crypto.dart';
@@ -103,6 +104,44 @@ class RekeySyncService {
     }
   }
   
+  /// TOKENOMICS_V2 §9: give every paying subscriber of the current month (and the author)
+  /// a rekey for `subscribers:YYYY-MM`. Remembers who already got one this epoch.
+  static Future<void> syncSubscriberRekeys({
+    required String mnemonic,
+    required String userPublicKey,
+  }) async {
+    try {
+      final tag = WalletService.currentSubscriberTag();
+      final prefs = await SharedPreferences.getInstance();
+      final doneKey = 'pre_rekey_subscribers_done_$tag';
+      final done = (prefs.getStringList(doneKey) ?? const <String>[]).toSet();
+      final subscribers = await WalletService.getSubscribers();
+      final targets = {userPublicKey, ...subscribers}.where((pk) => !done.contains(pk)).toList();
+      if (targets.isEmpty) return;
+
+      final rekeys = <Map<String, String>>[];
+      for (final pk in targets) {
+        final rk = await _generateRekey(mnemonic: mnemonic, followerPubKey: pk, policyTag: tag);
+        if (rk != null) {
+          rekeys.add({'followerPubKey': pk, 'tag': tag, 'rk': base64.encode(rk), 'scope': 'tag'});
+        }
+      }
+      if (rekeys.isEmpty) return;
+      final uploaded = await _uploadRekeysBatch(
+        userPublicKey: userPublicKey,
+        mnemonic: mnemonic,
+        rekeys: rekeys,
+      );
+      if (uploaded) {
+        done.addAll(rekeys.map((r) => r['followerPubKey']!));
+        await prefs.setStringList(doneKey, done.toList());
+        AppLogger.log('✅ REKEY_SYNC: ${rekeys.length} subscriber rekeys for $tag');
+      }
+    } catch (e) {
+      AppLogger.log('❌ REKEY_SYNC: subscriber sync error: $e');
+    }
+  }
+
   /// Generate a single rekey for a follower
   /// Returns rk(A→B) bytes
   static Future<Uint8List?> _generateRekey({

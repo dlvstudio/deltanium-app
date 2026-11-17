@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
+import 'package:deltanium_app/services/egress_receipt_service.dart';
 import 'package:deltanium_app/services/crypto_service.dart';
 import 'package:deltanium_app/services/file_crypto_service.dart';
 import 'package:deltanium_app/services/app_logger.dart';
@@ -156,7 +157,7 @@ class ImageDownloadService {
       final dataToSign = '$method$metadataPath$timestamp$bodyHash';
       final signature = await CryptoService.sign(dataToSign, userMnemonic);
       
-      final fileMetadataResponse = await http.get(
+      final fileMetadataResponse = await BlockHttp.get(
         Uri.parse('$metaNodeEndpoint$metadataPath'),
         headers: {
           'X-User-PubKey': CryptoService.normalizePublicKey(userPublicKey),
@@ -187,7 +188,7 @@ class ImageDownloadService {
       final blockDataToSign = '$method$blockPath$blockTimestamp$bodyHash';
       final blockSignature = await CryptoService.sign(blockDataToSign, userMnemonic);
       
-      final metadataResponse = await http.get(
+      final metadataResponse = await BlockHttp.get(
         Uri.parse('$metaNodeEndpoint$blockPath'),
         headers: {
           'X-User-PubKey': CryptoService.normalizePublicKey(userPublicKey),
@@ -225,7 +226,7 @@ class ImageDownloadService {
         final contentBlockDataToSign = '$method$contentBlockPath$contentBlockTimestamp$bodyHash';
         final contentBlockSignature = await CryptoService.sign(contentBlockDataToSign, userMnemonic);
         
-        final contentBlockResponse = await http.get(
+        final contentBlockResponse = await BlockHttp.get(
           Uri.parse('$metaNodeEndpoint$contentBlockPath'),
           headers: {
             'X-User-PubKey': CryptoService.normalizePublicKey(userPublicKey),

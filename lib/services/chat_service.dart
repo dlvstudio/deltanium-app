@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
+import 'package:deltanium_app/services/egress_receipt_service.dart';
 import 'package:deltanium_app/config/constants.dart';
 import 'package:deltanium_app/services/crypto_service.dart';
 import 'package:deltanium_app/services/file_crypto_service.dart';
@@ -12,6 +13,7 @@ import 'package:deltanium_app/features/file_manager/file_upload_service.dart';
 import 'package:deltanium_app/services/storage_contract_service.dart';
 import 'package:deltanium_app/models/storage_contract.dart';
 import 'package:deltanium_app/services/request_signer.dart';
+import 'package:deltanium_app/services/store_node_directory.dart';
 
 /// Chat service – handles offline (file-based) messaging
 /// Reuses existing Store infrastructure for message storage
@@ -111,7 +113,7 @@ class ChatService {
         mnemonic: mnemonic,
       );
 
-      final resp = await http.get(
+      final resp = await BlockHttp.get(
         Uri.parse('$_apiBase$path'),
         headers: headers,
       );
@@ -158,15 +160,11 @@ class ChatService {
       final fileData = Uint8List.fromList(utf8.encode(payload));
 
       // 2. Get store nodes and pick N-of-M replicas
-      final nodeResp = await http.get(Uri.parse('$_apiBase/storenode/list'));
-      if (nodeResp.statusCode != 200) {
-        AppLogger.log('ChatService: Failed to get store nodes');
-        return false;
-      }
-      final nodes = (jsonDecode(nodeResp.body) as List<dynamic>)
-          .cast<Map<String, dynamic>>();
-      if (nodes.isEmpty) {
-        AppLogger.log('ChatService: No store nodes available');
+      late final List<Map<String, dynamic>> nodes;
+      try {
+        nodes = await StoreNodeDirectory.listNodes();
+      } catch (e) {
+        AppLogger.log('ChatService: Failed to get store nodes: $e');
         return false;
       }
       final selectedNodes = List<Map<String, dynamic>>.from(nodes)..shuffle();
@@ -174,7 +172,7 @@ class ChatService {
       final targets = selectedNodes.take(n).toList();
       final selectedNode = targets.first;
       final replicaNodes = targets.length > 1 ? targets.sublist(1) : <Map<String, dynamic>>[];
-      final nodeEndpoint = (selectedNode['endpoint'] ?? selectedNode['Endpoint'] ?? '').toString();
+      final nodeEndpoint = selectedNode['endpoint'] as String;
       AppLogger.log('ChatService: Using ${targets.length} store node(s) for offline message');
 
       // 3. Negotiate/Reuse Storage Contract (Chat Bundle)
@@ -247,7 +245,7 @@ class ChatService {
               'durationDays': 365, // ChatBundle is OpenEnded but we show 1 year cost
               'estimatedCostPerDay': proposal.totalFee / 365,
               'estimatedSize': _chatBundleSize,
-              'feeBasis': 'Estimated 1 year storage for Chat Bundle (5MB)',
+              'feeBasis': 'Node quote for 1 year of a 5 MB chat bundle, asked once per conversation',
             };
             confirmed = await onConfirmFee(storageInfo);
           } else {
@@ -290,6 +288,7 @@ class ChatService {
         fileType: 'chat_message',
         shareType: 'me',
         contractId: contractId,
+        socialItem: true,
         onProgress: (msg) => AppLogger.log('ChatService upload: $msg'),
       );
 
@@ -380,7 +379,7 @@ class ChatService {
         mnemonic: mnemonic,
       );
 
-      final resp = await http.get(
+      final resp = await BlockHttp.get(
         Uri.parse('$_apiBase$path'),
         headers: headers,
       );
@@ -418,17 +417,15 @@ class ChatService {
       AppLogger.log('ChatService.decrypt: fileId=$fileId, blockId=$blockId, storeNodeId=$storeNodeId');
 
       // 1. Get store node endpoint
-      final nodeResp = await http.get(Uri.parse('$_apiBase/storenode/list'));
-      if (nodeResp.statusCode != 200) return null;
+      final nodes = await StoreNodeDirectory.listNodes(requireNonEmpty: false);
+      if (nodes.isEmpty) return null;
 
-      final nodes = jsonDecode(nodeResp.body) as List<dynamic>;
       final node = nodes.firstWhere(
-        (n) => (n['id']?.toString() ?? n['Id']?.toString() ?? '') == storeNodeId,
-        orElse: () => nodes.isNotEmpty ? nodes.first : null,
+        (n) => (n['id']?.toString() ?? '') == storeNodeId,
+        orElse: () => nodes.first,
       );
-      if (node == null) return null;
 
-      final endpoint = (node['endpoint'] ?? node['Endpoint'] ?? '').toString().replaceAll(RegExp(r'/\$'), '');
+      final endpoint = node['endpoint'] as String;
 
       // 2. Get file metadata from Store using /api/file/download/{fileId}
       //    (Same endpoint as existing post download flow)
@@ -437,7 +434,7 @@ class ChatService {
       final metaDataToSign = 'GET$metaPath$timestamp';
       final metaSig = await CryptoService.sign(metaDataToSign, mnemonic);
 
-      final metaResp = await http.get(
+      final metaResp = await BlockHttp.get(
         Uri.parse('$endpoint$metaPath'),
         headers: {
           'Content-Type': 'application/json',
@@ -467,7 +464,7 @@ class ChatService {
       final blockDataToSign = 'GET$blockPath$ts2';
       final blockSig = await CryptoService.sign(blockDataToSign, mnemonic);
 
-      final blockResp = await http.get(
+      final blockResp = await BlockHttp.get(
         Uri.parse('$endpoint$blockPath'),
         headers: {
           'X-User-PubKey': CryptoService.normalizePublicKey(pubKey),
@@ -518,7 +515,7 @@ class ChatService {
       final ts3 = (DateTime.now().millisecondsSinceEpoch / 1000).floor().toString();
       final contentSig = await CryptoService.sign('GET$contentBlockPath$ts3', mnemonic);
 
-      final contentResp = await http.get(
+      final contentResp = await BlockHttp.get(
         Uri.parse('$endpoint$contentBlockPath'),
         headers: {
           'X-User-PubKey': CryptoService.normalizePublicKey(pubKey),
@@ -569,7 +566,7 @@ class ChatService {
         mnemonic: mnemonic,
       );
 
-      final resp = await http.get(
+      final resp = await BlockHttp.get(
         Uri.parse('$_apiBase$path'),
         headers: headers,
       );
@@ -662,7 +659,7 @@ class ChatService {
         mnemonic: mnemonic,
       );
 
-      final resp = await http.get(
+      final resp = await BlockHttp.get(
         Uri.parse('$_apiBase$path'),
         headers: headers,
       );
