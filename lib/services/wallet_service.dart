@@ -100,6 +100,7 @@ class WalletService {
     bool social = false,
     int months = 12,
     List<Map<String, Object>> blocks = const [],
+    int? replicas,
   }) async {
     final auth = await _auth();
     if (auth == null) return const WalletResult(false, 401, null, 'Not signed in');
@@ -112,6 +113,9 @@ class WalletService {
       'months': months,
       'contractType': 'TimeFixed',
       'blocks': blocks,
+      // Copies to pay for: Central copies the item to more Stores until this many hold it, so a post
+      // uploaded to one Store still ends up replicated (TOKENOMICS_V2 §6).
+      'replicas': replicas ?? AppConstants.replicationFactor,
       if (social) 'kind': 'social',
     });
     AppLogger.log('WalletService.registerStorage $fileId ($sizeBytes B, social=$social): ${r.status}');
