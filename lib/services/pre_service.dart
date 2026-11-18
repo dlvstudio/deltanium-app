@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:deltanium_app/services/pre_ffi.dart';
@@ -41,14 +42,14 @@ class PreService {
           'signature': popSignature,
         }
       });
-      final bodyHash = base64Encode(utf8.encode(bodyJson));
+      final bodyHash = sha256.convert(utf8.encode(bodyJson)).toString();
       final sig = await CryptoService.sign('$method$pathForSign$ts$bodyHash', mnemonic);
 
       final resp = await http.post(
         Uri.parse('$apiBaseUrl$pathForUrl'),
         headers: {
           'Content-Type': 'application/json',
-          'X-User-PubKey': followerPubKey,
+          'X-User-PubKey': CryptoService.normalizePublicKey(followerPubKey),
           'X-Timestamp': ts,
           'X-Signature': sig,
         },
@@ -187,13 +188,13 @@ class PreService {
         'mode': 'client',
         'proof': { 'nonce': nonce, 'signature': popSignature }
       });
-      final bodyHash = base64Encode(utf8.encode(bodyJson));
+      final bodyHash = sha256.convert(utf8.encode(bodyJson)).toString();
       final sig = await CryptoService.sign('$method$pathForSign$ts$bodyHash', mnemonic);
       final resp = await http.post(
         Uri.parse('$apiBaseUrl$pathForUrl'),
         headers: {
           'Content-Type': 'application/json',
-          'X-User-PubKey': followerPubKey,
+          'X-User-PubKey': CryptoService.normalizePublicKey(followerPubKey),
           'X-Timestamp': ts,
           'X-Signature': sig,
         },
