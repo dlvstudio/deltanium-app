@@ -40,6 +40,18 @@ jobs:
         run: |
           flutter pub get
           flutter test
+      - name: Pre-extract libwebrtc
+        # flutter_webrtc's CMake extracts its prebuilt libwebrtc through the plugin symlink, which CMake
+        # refuses on Windows runners. Extract it in the real pub-cache folder first so CMake skips it.
+        shell: pwsh
+        run: |
+          $plugin = Get-ChildItem "$env:PUB_CACHE\hosted\pub.dev" -Directory -Filter "flutter_webrtc-*" | Select-Object -First 1
+          $tp = Join-Path $plugin.FullName "third_party"
+          $url = (Select-String -Path "$tp\CMakeLists.txt" -Pattern 'https://\S+libwebrtc\.zip').Matches[0].Value
+          New-Item -ItemType Directory -Force "$tp\downloads" | Out-Null
+          Invoke-WebRequest $url -OutFile "$tp\downloads\libwebrtc.zip"
+          Expand-Archive "$tp\downloads\libwebrtc.zip" -DestinationPath $tp -Force
+          Get-ChildItem $tp | Select-Object -ExpandProperty Name
       - name: Build Windows app
         working-directory: app
         run: flutter build windows --release
