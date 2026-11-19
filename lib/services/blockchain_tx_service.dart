@@ -79,10 +79,8 @@ class BlockchainTxService {
       }
       final list = jsonDecode(resp.body) as List<dynamic>;
       final endpoints = list
-          .map((item) => StoreNodeDirectory.sanitizeEndpoint(
-                (item as Map)['endpoint']?.toString() ?? item['Endpoint']?.toString(),
-              ))
-          .whereType<String>()
+          .map((item) => StoreNodeDirectory.normalizeNode(Map<String, dynamic>.from(item as Map))['endpoint'] as String)
+          .where(StoreNodeDirectory.isUsableEndpoint)
           .toList();
       if (endpoints.isEmpty) return null;
       return endpoints[Random().nextInt(endpoints.length)];

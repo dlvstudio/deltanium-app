@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:deltanium_app/config/constants.dart';
 import 'package:deltanium_app/services/app_logger.dart';
+import 'package:deltanium_app/services/dltp/node_address.dart';
 import 'package:http/http.dart' as http;
 
 /// Resolves active Store node endpoints from Central API.
@@ -31,17 +33,45 @@ class StoreNodeDirectory {
     return isUsableEndpoint(endpoint) ? endpoint : null;
   }
 
+  /// `endpoint` is the base URL this build uses for the node (see [NodeAddress]):
+  /// its HTTPS endpoint, or on desktop / mobile a DLTP-routed URL for a node that
+  /// only publishes a `tcps://` endpoint. `httpsEndpoint` is the node's real HTTPS
+  /// endpoint ('' for a TCP-only node).
   static Map<String, dynamic> normalizeNode(Map<String, dynamic> node, {int index = 0}) {
-    final endpoint = normalizeEndpoint(
+    final https = normalizeEndpoint(
       (node['endpoint'] ?? node['Endpoint'] ?? '').toString(),
     );
+    final tcp = (node['tcpEndpoint'] ?? node['TcpEndpoint'])?.toString();
+    final endpoint = NodeAddress.of(https, tcp);
     final id = (node['id'] ?? node['Id'] ?? node['publicKey'] ?? node['PublicKey'] ?? 'node-$index')
         .toString();
     return {
       ...node,
       'id': id,
       'endpoint': endpoint,
+      'httpsEndpoint': https,
     };
+  }
+
+  /// Up to [n] random nodes for a new upload. The first one (the primary, whose URL is
+  /// stored in the post) has an HTTPS endpoint whenever one is available, so web
+  /// readers can open the link.
+  static List<Map<String, dynamic>> pickForUpload(List<Map<String, dynamic>> nodes, int n, {Random? random}) {
+    if (nodes.isEmpty) return nodes;
+    final shuffled = List<Map<String, dynamic>>.from(nodes)..shuffle(random ?? Random());
+    final picked = shuffled.take(n.clamp(1, shuffled.length)).toList();
+    bool hasHttps(Map<String, dynamic> x) => (x['httpsEndpoint'] as String? ?? x['endpoint'] as String? ?? '').isNotEmpty;
+    if (hasHttps(picked.first)) return picked;
+    final i = picked.indexWhere(hasHttps);
+    if (i > 0) {
+      final first = picked[0];
+      picked[0] = picked[i];
+      picked[i] = first;
+      return picked;
+    }
+    final outside = shuffled.skip(picked.length).where(hasHttps).toList();
+    if (outside.isNotEmpty) picked.insert(0, outside.first);
+    return picked.take(n.clamp(1, shuffled.length)).toList();
   }
 
   /// Full node maps with normalized `id` + `endpoint`.

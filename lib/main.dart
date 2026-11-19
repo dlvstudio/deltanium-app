@@ -6,6 +6,7 @@ import 'package:deltanium_app/config/theme.dart';
 import 'package:deltanium_app/data/mock/mock_data.dart';
 import 'package:deltanium_app/services/app_logger.dart';
 import 'package:deltanium_app/services/auth_service.dart';
+import 'package:deltanium_app/services/dltp/dltp.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -35,7 +36,10 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-void main() async {
+/// Desktop / mobile builds route requests for nodes with a DLTP (TCP) endpoint over TCP.
+void main() => runWithDltp(_main);
+
+Future<void> _main() async {
   final _ = SecureRandom('Fortuna');
 
   WidgetsFlutterBinding.ensureInitialized();

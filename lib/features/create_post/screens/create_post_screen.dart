@@ -9,7 +9,6 @@ import 'dart:io'; // Import for File operations on mobile
 import 'dart:typed_data';
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:deltanium_app/services/crypto_service.dart';
 import 'package:deltanium_app/models/user_profile.dart';
@@ -1253,10 +1252,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   List<Map<String, dynamic>> _selectNodes(List<Map<String, dynamic>> nodes) {
-    if (nodes.isEmpty) return nodes;
-    final shuffled = List<Map<String, dynamic>>.from(nodes)..shuffle(Random());
-    final n = AppConstants.replicationFactor.clamp(1, shuffled.length);
-    return shuffled.take(n).toList();
+    return StoreNodeDirectory.pickForUpload(nodes, AppConstants.replicationFactor);
   }
   
   // Upload media to a storage node (and optional N-of-M replicas)
