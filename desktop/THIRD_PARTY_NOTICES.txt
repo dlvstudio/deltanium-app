@@ -1,0 +1,16 @@
+Deltanium Desktop - third-party notices
+
+This build includes the umbral_pre native library (proxy re-encryption), built from:
+
+  umbral-pre 0.11.0 - https://github.com/nucypher/rust-umbral
+  commit 6f692dd5f2944889c45185875545a0159ea7b735
+  License: GNU General Public License v3.0 only (GPL-3.0-only)
+  Full license text: https://www.gnu.org/licenses/gpl-3.0.txt
+
+The complete source code of this application and of its native wrapper is public:
+
+  App:                     https://github.com/dlvstudio/deltanium-app
+  Native wrapper (umbral): https://github.com/dlvstudio/deltanium-core (native/umbral_pre)
+
+Other components are Flutter and Dart packages under their own open-source licenses
+(BSD, MIT, Apache-2.0); see https://pub.dev for each package listed in pubspec.lock.

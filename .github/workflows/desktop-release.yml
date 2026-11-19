@@ -1,0 +1,115 @@
+# Builds the Deltanium desktop apps (Windows x64, macOS universal) and publishes them as a GitHub Release.
+# Runs on the public GitHub mirror (dlvstudio/deltanium-app); Azure Pipelines ignores this file.
+# Start it by pushing a tag "desktop-v<version>" or from the Actions tab (workflow_dispatch).
+name: Desktop release
+
+on:
+  push:
+    tags: ['desktop-v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag, e.g. desktop-v1.2.0'
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  # nucypher/rust-umbral (GPL-3.0) at the commit vendored in deltanium-core.
+  UMBRAL_REF: 6f692dd5f2944889c45185875545a0159ea7b735
+  RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: app }
+      - uses: actions/checkout@v4
+        with: { repository: dlvstudio/deltanium-core, path: core }
+      - uses: actions/checkout@v4
+        with: { repository: nucypher/rust-umbral, ref: '${{ env.UMBRAL_REF }}', path: core/.vendor/rust-umbral }
+      - name: Build umbral_pre.dll
+        working-directory: core/native/umbral_pre
+        run: cargo build --release
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable, cache: true }
+      - name: Test
+        working-directory: app
+        run: |
+          flutter pub get
+          flutter test
+      - name: Build Windows app
+        working-directory: app
+        run: flutter build windows --release
+      - name: Package
+        shell: pwsh
+        run: |
+          $out = "app/build/windows/x64/runner/Release"
+          Copy-Item core/native/umbral_pre/target/release/umbral_pre.dll $out
+          Copy-Item app/LICENSE "$out/LICENSE.txt"
+          Copy-Item app/desktop/THIRD_PARTY_NOTICES.txt $out
+          Rename-Item "$out/deltanium_app.exe" "Deltanium.exe"
+          Compress-Archive -Path "$out/*" -DestinationPath Deltanium-Windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with: { name: windows, path: Deltanium-Windows-x64.zip }
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: app }
+      - uses: actions/checkout@v4
+        with: { repository: dlvstudio/deltanium-core, path: core }
+      - uses: actions/checkout@v4
+        with: { repository: nucypher/rust-umbral, ref: '${{ env.UMBRAL_REF }}', path: core/.vendor/rust-umbral }
+      - name: Build universal libumbral_pre.dylib
+        working-directory: core/native/umbral_pre
+        run: |
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          export MACOSX_DEPLOYMENT_TARGET=10.15
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+          lipo -create -output libumbral_pre.dylib \
+            target/aarch64-apple-darwin/release/libumbral_pre.dylib \
+            target/x86_64-apple-darwin/release/libumbral_pre.dylib
+          install_name_tool -id @rpath/libumbral_pre.dylib libumbral_pre.dylib
+          lipo -info libumbral_pre.dylib
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable, cache: true }
+      - name: Build macOS app
+        working-directory: app
+        run: |
+          flutter pub get
+          flutter build macos --release
+      - name: Bundle library, sign ad hoc, package
+        run: |
+          APP=$(ls -d app/build/macos/Build/Products/Release/*.app | head -1)
+          mkdir -p "$APP/Contents/Frameworks"
+          cp core/native/umbral_pre/libumbral_pre.dylib "$APP/Contents/Frameworks/"
+          codesign --force -s - "$APP/Contents/Frameworks/libumbral_pre.dylib"
+          codesign --force -s - --entitlements app/macos/Runner/Release.entitlements "$APP"
+          codesign --verify --deep --strict "$APP"
+          mkdir -p dist && cp -R "$APP" dist/Deltanium.app
+          cp app/LICENSE dist/LICENSE.txt
+          cp app/desktop/THIRD_PARTY_NOTICES.txt dist/
+          hdiutil create -volname Deltanium -srcfolder dist -ov -format UDZO Deltanium-macOS.dmg
+      - uses: actions/upload-artifact@v4
+        with: { name: macos, path: Deltanium-macOS.dmg }
+
+  release:
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          (cd dist && sha256sum * > SHA256SUMS.txt)
+          gh release create "$RELEASE_TAG" dist/* --target "$GITHUB_SHA" \
+            --title "Deltanium Desktop ${RELEASE_TAG#desktop-v}" --notes-file desktop/RELEASE_NOTES.md \
+            || gh release upload "$RELEASE_TAG" dist/* --clobber
