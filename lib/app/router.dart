@@ -260,7 +260,7 @@ Future<GoRouter> configureRouter() async {
       GoRoute(
         path: AppRoutes.search,
         name: 'search',
-        builder: (context, state) => const SearchScreen(),
+        builder: (context, state) => SearchScreen(initialQuery: state.uri.queryParameters['q']),
       ),
       
       // Notifications route

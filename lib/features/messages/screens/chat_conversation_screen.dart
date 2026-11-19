@@ -9,6 +9,7 @@ import 'package:deltanium_app/config/theme.dart';
 import 'package:deltanium_app/features/messages/widgets/message_bubble.dart';
 import 'package:deltanium_app/features/messages/widgets/chat_input.dart';
 import 'package:deltanium_app/widgets/confirm_storage_cost_dialog.dart';
+import 'package:deltanium_app/utils/server_time.dart';
 
 class ChatConversationScreen extends StatefulWidget {
   final String conversationId;
@@ -424,8 +425,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     // 4. Sort by timestamp
     result.sort((a, b) {
       try {
-        final aTime = DateTime.parse(a.timestamp);
-        final bTime = DateTime.parse(b.timestamp);
+        final aTime = ServerTime.parse(a.timestamp);
+        final bTime = ServerTime.parse(b.timestamp);
         return aTime.compareTo(bTime);
       } catch (_) {
         return 0;

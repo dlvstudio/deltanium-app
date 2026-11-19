@@ -1,4 +1,5 @@
 import 'package:deltanium_app/app/router.dart';
+import 'package:deltanium_app/l10n/app_lang.dart';
 import 'package:deltanium_app/config/brand.dart';
 import 'package:deltanium_app/config/network.dart';
 import 'package:deltanium_app/config/theme.dart';
@@ -39,6 +40,7 @@ void main() async {
 
   WidgetsFlutterBinding.ensureInitialized();
   await AppLogger.init();
+  await appLang.load();
 
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,

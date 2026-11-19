@@ -12,7 +12,10 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class SearchScreen extends StatefulWidget {
-  const SearchScreen({super.key});
+  /// Opens with this search already run (a post author's public key, from the feed).
+  final String? initialQuery;
+
+  const SearchScreen({super.key, this.initialQuery});
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -39,6 +42,11 @@ class _SearchScreenState extends State<SearchScreen> with TickerProviderStateMix
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _loadRecentUsers();
+    final q = widget.initialQuery?.trim() ?? '';
+    if (q.isNotEmpty) {
+      _searchController.text = q;
+      _searchUsers(q);
+    }
   }
   
   @override

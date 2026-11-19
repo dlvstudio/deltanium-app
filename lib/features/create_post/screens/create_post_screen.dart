@@ -1461,7 +1461,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         'fileName': fileName,
         'fileType': fileType,
         'fileSize': 0, // Size would be available from upload response
-        'createdAt': DateTime.now().toIso8601String(),
+        'createdAt': DateTime.now().toUtc().toIso8601String(),
       };
       
       final response = await http.post(

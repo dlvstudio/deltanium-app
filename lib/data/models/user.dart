@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:deltanium_app/utils/server_time.dart';
 
 class User extends Equatable {
   final String id;
@@ -73,7 +74,7 @@ class User extends Equatable {
       publicKey: json['publicKey'] as String,
       bio: json['bio'] as String? ?? '',
       isVerified: json['isVerified'] as bool? ?? false,
-      createdAt: DateTime.parse(json['createdAt'] as String),
+      createdAt: ServerTime.parse(json['createdAt'] as String),
       followersCount: json['followersCount'] as int? ?? 0,
       followingCount: json['followingCount'] as int? ?? 0,
       postsCount: json['postsCount'] as int? ?? 0,
@@ -94,7 +95,7 @@ class User extends Equatable {
       'publicKey': publicKey,
       'bio': bio,
       'isVerified': isVerified,
-      'createdAt': createdAt.toIso8601String(),
+      'createdAt': createdAt.toUtc().toIso8601String(),
       'followersCount': followersCount,
       'followingCount': followingCount,
       'postsCount': postsCount,
@@ -125,7 +126,7 @@ class User extends Equatable {
       'id': id,
       'username': username,
       'publicKey': publicKey,
-      'createdAt': createdAt.toIso8601String(),
+      'createdAt': createdAt.toUtc().toIso8601String(),
     };
   }
 } 

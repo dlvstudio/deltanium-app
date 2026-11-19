@@ -1,3 +1,4 @@
+import 'package:deltanium_app/utils/server_time.dart';
 class Post {
   final String id;
   final String userId;
@@ -79,8 +80,8 @@ class Post {
       userId: json['userId'] as String,
       content: json['content'] as String,
       mediaUrls: (json['mediaUrls'] as List<dynamic>?)?.map((e) => e as String).toList() ?? [],
-      createdAt: DateTime.parse(json['createdAt'] as String),
-      updatedAt: json['updatedAt'] != null ? DateTime.parse(json['updatedAt'] as String) : null,
+      createdAt: ServerTime.parse(json['createdAt'] as String),
+      updatedAt: json['updatedAt'] != null ? ServerTime.parse(json['updatedAt'] as String) : null,
       likesCount: json['likesCount'] as int? ?? 0,
       commentsCount: json['commentsCount'] as int? ?? 0,
       sharesCount: json['sharesCount'] as int? ?? 0,
@@ -106,8 +107,8 @@ class Post {
       'userId': userId,
       'content': content,
       'mediaUrls': mediaUrls,
-      'createdAt': createdAt.toIso8601String(),
-      'updatedAt': updatedAt?.toIso8601String(),
+      'createdAt': createdAt.toUtc().toIso8601String(),
+      'updatedAt': updatedAt?.toUtc().toIso8601String(),
       'likesCount': likesCount,
       'commentsCount': commentsCount,
       'sharesCount': sharesCount,
@@ -127,8 +128,8 @@ class Post {
       'id': id,
       'userId': userId,
       'contentHash': _generateContentHash(),
-      'createdAt': createdAt.toIso8601String(),
-      'updatedAt': updatedAt?.toIso8601String(),
+      'createdAt': createdAt.toUtc().toIso8601String(),
+      'updatedAt': updatedAt?.toUtc().toIso8601String(),
       'privacy': privacy.name,
       'version': version,
     };

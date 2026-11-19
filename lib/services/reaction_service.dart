@@ -39,7 +39,7 @@ class ReactionService {
       AppLogger.log('ReactionService: sendReaction react="$reactionKind" post=$postFileId node=$nodeEndpoint user=${userPublicKey.substring(0, 10)}...');
 
       final isPublicPost = postEncryptedType == 'public';
-      final now = DateTime.now().toIso8601String();
+      final now = DateTime.now().toUtc().toIso8601String();
       final effectiveFileId = fileId ?? _generateId(prefix: 'react');
       final effectiveFirstBlockId = firstBlockId ?? _generateId(prefix: 'b0');
 

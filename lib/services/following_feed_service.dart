@@ -10,6 +10,7 @@ import 'package:deltanium_app/features/posts/screens/my_posts_screen.dart';
 import 'package:deltanium_app/config/constants.dart';
 import 'package:deltanium_app/services/app_logger.dart';
 import 'package:deltanium_app/services/store_node_directory.dart';
+import 'package:deltanium_app/utils/server_time.dart';
 
 
 class FollowingPost {
@@ -159,7 +160,7 @@ class FollowingFeedService {
     try {
       final fileId = postFile['fileId'] as String;
       final isPublic = postFile['isPublic'] as bool? ?? false;
-      final creationTime = DateTime.parse(postFile['creationTime'] as String);
+      final creationTime = ServerTime.parse(postFile['creationTime'] as String);
 
       if (isPublic) {
         return await _loadPublicPost(fileId, currentUserPubKey, mnemonic, authorInfo, creationTime, nodeEndpoint);

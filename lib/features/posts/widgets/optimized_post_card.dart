@@ -1,3 +1,4 @@
+import 'package:deltanium_app/app/router.dart';
 import 'package:deltanium_app/config/brand.dart';
 import 'package:deltanium_app/config/theme.dart';
 import 'package:deltanium_app/features/feed/widgets/related_files_widget.dart';
@@ -6,6 +7,7 @@ import 'package:deltanium_app/features/posts/widgets/post_comments_section.dart'
 import 'package:deltanium_app/features/posts/widgets/post_reactions_bar.dart';
 import 'package:deltanium_app/services/crypto_service.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 // 🚀 OPTIMIZED: Separate widget to prevent unnecessary rebuilds during scrolling
@@ -48,36 +50,48 @@ class OptimizedPostCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    CircleAvatar(
-                      radius: 20,
-                      backgroundColor: Brand.sand.withValues(alpha: 0.18),
-                      child: Icon(
-                        Icons.person_rounded,
-                        color: Brand.sand,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _displayAuthorName(post),
-                            style: GoogleFonts.manrope(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 15,
-                              color: Brand.text,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(Brand.radius),
+                        onTap: () => _openAuthor(context, post),
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 20,
+                              backgroundColor: Brand.sand.withValues(
+                                alpha: 0.18,
+                              ),
+                              child: Icon(
+                                Icons.person_rounded,
+                                color: Brand.sand,
+                                size: 20,
+                              ),
                             ),
-                          ),
-                          Text(
-                            _formatDate(post.creationTime),
-                            style: GoogleFonts.manrope(
-                              fontSize: 12,
-                              color: Brand.muted,
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _displayAuthorName(post),
+                                    style: GoogleFonts.manrope(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 15,
+                                      color: Brand.text,
+                                    ),
+                                  ),
+                                  Text(
+                                    _formatDate(post.creationTime),
+                                    style: GoogleFonts.manrope(
+                                      fontSize: 12,
+                                      color: Brand.muted,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                     Flexible(
@@ -87,19 +101,25 @@ class OptimizedPostCard extends StatelessWidget {
                         alignment: WrapAlignment.end,
                         children: [
                           _statusChip(
-                            label: post.encryptedType == 'public' ? 'Public' : 'Encrypted',
-                            icon: post.encryptedType == 'public'
-                                ? Icons.public_rounded
-                                : Icons.lock_rounded,
-                            accent: post.encryptedType == 'public'
-                                ? Brand.moss
-                                : Brand.danger,
+                            label:
+                                post.encryptedType == 'public'
+                                    ? 'Public'
+                                    : 'Encrypted',
+                            icon:
+                                post.encryptedType == 'public'
+                                    ? Icons.public_rounded
+                                    : Icons.lock_rounded,
+                            accent:
+                                post.encryptedType == 'public'
+                                    ? Brand.moss
+                                    : Brand.danger,
                           ),
                           _statusChip(
                             label: _isPostShared(post) ? 'Shared' : 'Yours',
-                            icon: _isPostShared(post)
-                                ? Icons.share_rounded
-                                : Icons.person_rounded,
+                            icon:
+                                _isPostShared(post)
+                                    ? Icons.share_rounded
+                                    : Icons.person_rounded,
                             accent: Brand.sand,
                           ),
                         ],
@@ -116,9 +136,10 @@ class OptimizedPostCard extends StatelessWidget {
                     color: Brand.text,
                   ),
                 ),
-                
+
                 // Attached media info
-                if (post.relatedFiles != null && post.relatedFiles!.isNotEmpty) ...[
+                if (post.relatedFiles != null &&
+                    post.relatedFiles!.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   RelatedFilesWidget(
                     relatedFiles: post.relatedFiles!,
@@ -130,32 +151,38 @@ class OptimizedPostCard extends StatelessWidget {
                     onFileRemove: onFileRemove,
                   ),
                 ],
-                
+
                 if (post.tags != null && post.tags!.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   Wrap(
                     spacing: 6,
                     runSpacing: 6,
-                    children: post.tags!
-                        .map(
-                          (tag) => Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Brand.sand.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(Brand.radius),
-                              border: Border.all(color: Brand.line),
-                            ),
-                            child: Text(
-                              tag,
-                              style: GoogleFonts.manrope(
-                                color: Brand.sand,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
+                    children:
+                        post.tags!
+                            .map(
+                              (tag) => Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Brand.sand.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(
+                                    Brand.radius,
+                                  ),
+                                  border: Border.all(color: Brand.line),
+                                ),
+                                child: Text(
+                                  tag,
+                                  style: GoogleFonts.manrope(
+                                    color: Brand.sand,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
-                        )
-                        .toList(),
+                            )
+                            .toList(),
                   ),
                 ],
                 const SizedBox(height: 14),
@@ -225,7 +252,10 @@ class OptimizedPostCard extends StatelessWidget {
                       ),
                       Text(
                         'Created ${_formatDate(post.creationTime)}',
-                        style: GoogleFonts.manrope(fontSize: 12, color: Brand.muted),
+                        style: GoogleFonts.manrope(
+                          fontSize: 12,
+                          color: Brand.muted,
+                        ),
                       ),
                     ],
                   ),
@@ -277,7 +307,7 @@ class OptimizedPostCard extends StatelessWidget {
       ),
     );
   }
-  
+
   String _displayAuthorName(PostMetadata post) {
     // Prefer explicit authorName from decrypted content if available
     if (post.authorName != null && post.authorName!.trim().isNotEmpty) {
@@ -290,7 +320,9 @@ class OptimizedPostCard extends StatelessWidget {
         final current = CryptoService.normalizePublicKey(userPublicKey!);
         if (owner == current) return 'You';
         // Show shortened owner key as fallback
-        return owner.substring(0, 8) + '...' + owner.substring(owner.length - 6);
+        return owner.substring(0, 8) +
+            '...' +
+            owner.substring(owner.length - 6);
       }
     } catch (_) {}
     return 'You';
@@ -302,53 +334,73 @@ class OptimizedPostCard extends StatelessWidget {
         Icon(
           icon,
           size: 20,
-          color: isDarkMode
-              ? DeltaniumTheme.darkTextSecondaryColor
-              : DeltaniumTheme.lightTextSecondaryColor,
+          color:
+              isDarkMode
+                  ? DeltaniumTheme.darkTextSecondaryColor
+                  : DeltaniumTheme.lightTextSecondaryColor,
         ),
         const SizedBox(width: 4),
         Text(
           count,
           style: TextStyle(
             fontSize: 14,
-            color: isDarkMode
-                ? DeltaniumTheme.darkTextSecondaryColor
-                : DeltaniumTheme.lightTextSecondaryColor,
+            color:
+                isDarkMode
+                    ? DeltaniumTheme.darkTextSecondaryColor
+                    : DeltaniumTheme.lightTextSecondaryColor,
           ),
         ),
       ],
     );
   }
-  
+
+  /// Tapping the author: your own posts open your profile; anyone else's opens Explore on their
+  /// public key, which shows their card (follow, message, tip).
+  void _openAuthor(BuildContext context, PostMetadata post) {
+    final owner = post.ownerPubKey;
+    if (owner == null || owner.trim().isEmpty) return;
+    if (!_isPostShared(post)) {
+      context.push(AppRoutes.localUserProfile);
+      return;
+    }
+    context.push(
+      '${AppRoutes.search}?q=${Uri.encodeQueryComponent(CryptoService.normalizePublicKey(owner))}',
+    );
+  }
+
   // Check if post is shared with current user (vs owned by current user)
   bool _isPostShared(PostMetadata post) {
     // 🔧 FIX: Check if current user is the owner by comparing ownerPubKey from decrypted metadata
     // If we successfully decrypted the post, we can check the ownerPubKey field
-    
+
     if (!post.isDecrypted) {
       // If post is not decrypted, we can't determine ownership reliably
       return true; // Show as SHARED to be safe
     }
-    
+
     // Check against the ownerPubKey from decrypted metadata
     // The ownerPubKey field should be populated during decryption from metadata block
     final postOwnerPubKey = post.ownerPubKey;
     final currentUserPubKey = userPublicKey;
-    
+
     if (postOwnerPubKey != null && currentUserPubKey != null) {
       // Compare normalized public keys
-      final normalizedPostOwner = CryptoService.normalizePublicKey(postOwnerPubKey);
-      final normalizedCurrentUser = CryptoService.normalizePublicKey(currentUserPubKey);
-      
+      final normalizedPostOwner = CryptoService.normalizePublicKey(
+        postOwnerPubKey,
+      );
+      final normalizedCurrentUser = CryptoService.normalizePublicKey(
+        currentUserPubKey,
+      );
+
       // If current user is the owner, it's "MY POST", otherwise it's "SHARED"
       return normalizedPostOwner != normalizedCurrentUser;
     }
-    
+
     // If we can't determine ownership, assume it's shared
     return true;
   }
-  
+
   String _formatDate(DateTime date) {
     return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
   }
-} 
+}

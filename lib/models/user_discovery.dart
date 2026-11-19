@@ -1,3 +1,4 @@
+import 'package:deltanium_app/utils/server_time.dart';
 /// Model for user discovery and search functionality
 class DiscoveredUser {
   final String publicKey;
@@ -30,13 +31,13 @@ class DiscoveredUser {
       displayName: json['displayName'],
       bio: json['bio'],
       avatarUrl: json['avatarUrl'],
-      joinDate: DateTime.tryParse(json['joinDate'] ?? '') ?? DateTime.now(),
+      joinDate: ServerTime.tryParse(json['joinDate'] ?? '') ?? DateTime.now(),
       postsCount: json['postsCount'] ?? 0,
       followersCount: json['followersCount'] ?? 0,
       followingCount: json['followingCount'] ?? 0,
       isFollowing: json['isFollowing'] ?? false,
       lastActive: json['lastActive'] != null 
-          ? DateTime.tryParse(json['lastActive']) 
+          ? ServerTime.tryParse(json['lastActive']) 
           : null,
     );
   }
@@ -47,12 +48,12 @@ class DiscoveredUser {
       'displayName': displayName,
       'bio': bio,
       'avatarUrl': avatarUrl,
-      'joinDate': joinDate.toIso8601String(),
+      'joinDate': joinDate.toUtc().toIso8601String(),
       'postsCount': postsCount,
       'followersCount': followersCount,
       'followingCount': followingCount,
       'isFollowing': isFollowing,
-      'lastActive': lastActive?.toIso8601String(),
+      'lastActive': lastActive?.toUtc().toIso8601String(),
     };
   }
 

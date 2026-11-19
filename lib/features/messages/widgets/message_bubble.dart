@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:deltanium_app/config/theme.dart';
+import 'package:deltanium_app/utils/server_time.dart';
 
 class MessageBubble extends StatelessWidget {
   final String text;
@@ -136,7 +137,7 @@ class MessageBubble extends StatelessWidget {
   String _formatTime(String isoTime) {
     if (isoTime.isEmpty) return '';
     try {
-      final dt = DateTime.parse(isoTime);
+      final dt = ServerTime.parse(isoTime);
       final hour = dt.hour.toString().padLeft(2, '0');
       final minute = dt.minute.toString().padLeft(2, '0');
       return '$hour:$minute';

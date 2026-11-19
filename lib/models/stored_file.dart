@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:deltanium_app/utils/server_time.dart';
 
 class StoredFile {
   final String id;
@@ -36,7 +37,7 @@ class StoredFile {
       ownerPublicKey: json['ownerPublicKey'] ?? '',
       storeNodeId: json['storeNodeId'] ?? '',
       storedAt: json['storedAt'] != null 
-          ? DateTime.parse(json['storedAt']) 
+          ? ServerTime.parse(json['storedAt']) 
           : DateTime.now(),
       isActive: json['isActive'] ?? true,
       fileHash: json['fileHash'],
@@ -56,7 +57,7 @@ class StoredFile {
       'fileId': fileId,
       'ownerPublicKey': ownerPublicKey,
       'storeNodeId': storeNodeId,
-      'storedAt': storedAt.toIso8601String(),
+      'storedAt': storedAt.toUtc().toIso8601String(),
       'isActive': isActive,
       'fileHash': fileHash,
       'fileSize': fileSize,

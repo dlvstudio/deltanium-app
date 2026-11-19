@@ -501,7 +501,7 @@ class FileCryptoService {
       'contentBlockContentIds': contentBlockContentIds,
       'contentMerkleRoot': _calculateMerkleRoot(contentBlockContentIds),
       'version': '1.0', // For future compatibility
-      'creationTime': DateTime.now().toIso8601String(),
+      'creationTime': DateTime.now().toUtc().toIso8601String(),
       // 🆕 Post-specific fields
       if (fileType != null) 'type': fileType,
       if (relatedFiles != null) 'relatedFiles': relatedFiles,
@@ -681,7 +681,7 @@ class FileCryptoService {
         'fileId': userFileId, // 🆕 Unique fileId per user
         'firstBlockId': firstBlockId, // 🆕 Unique firstBlockId per user
         if (!isPreTag) 'recipientPubKey': normalizedUserKey,
-        'creationTime': DateTime.now().toIso8601String(),
+        'creationTime': DateTime.now().toUtc().toIso8601String(),
         'encryptedKey': base64Encode(encryptedKeyForUserBytes), // ECIES(K, pkAuthor for PRE, pkRecipient for non-PRE)
         if (fileType != null) 'type': fileType,
         'shareType': shareType,
@@ -709,7 +709,7 @@ class FileCryptoService {
         'contentBlockContentIds': contentBlockContentIds,
         'contentMerkleRoot': _calculateMerkleRoot(contentBlockContentIds),
         'version': '1.0',
-        'creationTime': DateTime.now().toIso8601String(),
+        'creationTime': DateTime.now().toUtc().toIso8601String(),
         if (fileType != null) 'type': fileType,
         if (relatedFiles != null) 'relatedFiles': relatedFiles,
         'ownerPubKey': ownerPublicKey,
@@ -1996,7 +1996,7 @@ class FileCryptoService {
         'contentBlockContentIds': contentBlockContentIds,
         'contentMerkleRoot': _calculateMerkleRoot(contentBlockContentIds),
         'version': '1.0',
-        'creationTime': DateTime.now().toIso8601String(),
+        'creationTime': DateTime.now().toUtc().toIso8601String(),
         'isPublic': true, // 🆕 Mark as public file
         if (fileType != null) 'type': fileType,
         if (relatedFiles != null) 'relatedFiles': relatedFiles,
@@ -2036,7 +2036,7 @@ class FileCryptoService {
         'firstBlockId': metadataBlockId, // Unique metadata block for each recipient
         'recipientPubKey': recipientPublicKey,
         'ownerPubKey': ownerPublicKey, // 🆕 FIX: Add ownerPubKey for backend lookup
-        'creationTime': DateTime.now().toIso8601String(),
+        'creationTime': DateTime.now().toUtc().toIso8601String(),
         'encryptedKey': '', // 🔓 No encryption key needed for public files
         'isPublic': true, // 🆕 Mark as public file
         if (contractId != null && contractId.isNotEmpty) 'contractId': contractId,

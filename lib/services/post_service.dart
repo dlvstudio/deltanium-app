@@ -43,7 +43,7 @@ class PostService {
       'textContent': textContent,
       'authorPublicKey': authorPublicKey,
       if (authorName != null && authorName.isNotEmpty) 'authorName': authorName,
-      'createdAt': DateTime.now().toIso8601String(),
+      'createdAt': DateTime.now().toUtc().toIso8601String(),
       'encryptedType': encryptedType,
       'shareType': shareType,
       'tags': tags ?? [],
@@ -75,7 +75,7 @@ class PostService {
         'fileName': media['name'] ?? media['fileName'] ?? 'Unknown file',
         'fileSize': media['size'] ?? media['fileSize'] ?? 0,
         'mimeType': _getMimeTypeFromExtension(media['extension'] ?? ''),
-        'uploadTime': DateTime.now().toIso8601String(),
+        'uploadTime': DateTime.now().toUtc().toIso8601String(),
         'nodeId': media['nodeId'] ?? '', // Store which node the file is on
         'nodeEndpoint': media['nodeEndpoint'] ?? '', // Store node endpoint for access
         'encryptedKey': media['encryptedKey'] ?? '', // Store encryptedKey for decryption
@@ -551,7 +551,7 @@ class PostService {
         'postContent': {
           'textContent': 'Sample post content',
           'authorPublicKey': userPublicKey,
-          'createdAt': DateTime.now().toIso8601String(),
+          'createdAt': DateTime.now().toUtc().toIso8601String(),
         },
         'relatedFiles': [
           // Example structure of related files
@@ -562,7 +562,7 @@ class PostService {
             'fileName': 'example.jpg',
             'fileSize': 1024000,
             'mimeType': 'image/jpeg',
-            'uploadTime': DateTime.now().toIso8601String(),
+            'uploadTime': DateTime.now().toUtc().toIso8601String(),
             'nodeId': 'node_1',
             'nodeEndpoint': nodeEndpoint,
             'caption': 'Example image',
@@ -672,7 +672,7 @@ class PostService {
       'fileName': file['fileName'] ?? file['name'] ?? 'Unknown file',
       'fileSize': file['fileSize'] ?? file['size'] ?? 0,
       'mimeType': _getMimeTypeFromExtension(file['extension'] ?? ''),
-      'uploadTime': DateTime.now().toIso8601String(),
+      'uploadTime': DateTime.now().toUtc().toIso8601String(),
       'nodeId': file['nodeId'],
       'nodeEndpoint': file['nodeEndpoint'],
     }).toList();

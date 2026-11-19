@@ -16,6 +16,7 @@ import 'package:deltanium_app/config/constants.dart';
 import 'package:deltanium_app/services/app_logger.dart';
 import 'package:deltanium_app/services/pre_ffi.dart';
 import 'package:deltanium_app/services/store_node_directory.dart';
+import 'package:deltanium_app/utils/server_time.dart';
 
 
 class PostMetadata {
@@ -86,7 +87,7 @@ class PostMetadata {
       fileId: _str(_pick(['fileId', 'FileId'])) ?? '',
       fileName: _str(_pick(['fileName', 'FileName'])),
       fileSize: fileSizeStr,
-      creationTime: DateTime.tryParse(creationStr) ?? DateTime.now(),
+      creationTime: ServerTime.tryParse(creationStr) ?? DateTime.now(),
       fileExtension: _str(_pick(['fileExtension', 'FileExtension'])),
       isDecrypted: (_pick(['isDecrypted', 'IsDecrypted']) as bool?) ?? false,
       textContent: _pick(['textContent', 'TextContent']),

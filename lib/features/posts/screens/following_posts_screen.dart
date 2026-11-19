@@ -441,7 +441,7 @@ class _FollowingPostsScreenState extends State<FollowingPostsScreen> {
                     'fileName': media['caption'] ?? 'Unknown file',
                     'fileSize': 0, // Size not available in current structure
                     'mimeType': 'application/octet-stream',
-                    'uploadTime': DateTime.now().toIso8601String(),
+                    'uploadTime': DateTime.now().toUtc().toIso8601String(),
                     'nodeId': 'unknown',
                     'nodeEndpoint': 'unknown',
                     'caption': media['caption'] ?? '',

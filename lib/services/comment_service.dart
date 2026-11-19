@@ -123,7 +123,7 @@ class CommentService {
         AppLogger.log('CommentService: Uploaded ${uploadedMedia.length}/${attachedMedia.length} media files');
       }
 
-      final now = DateTime.now().toIso8601String();
+      final now = DateTime.now().toUtc().toIso8601String();
       final effectiveFileId = fileId ?? _generateId(prefix: 'comment');
       final effectiveFirstBlockId = firstBlockId ?? _generateId(prefix: 'b0');
 

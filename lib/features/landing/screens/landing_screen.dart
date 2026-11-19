@@ -1,656 +1,381 @@
+import 'package:deltanium_app/app/router.dart';
+import 'package:deltanium_app/config/brand.dart';
+import 'package:deltanium_app/l10n/app_lang.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:deltanium_app/config/theme.dart';
-import 'package:deltanium_app/app/router.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+/// Signed-out landing page. Mirrors deltanium.com: private to use, paid to run.
 class LandingScreen extends StatelessWidget {
   const LandingScreen({super.key});
 
+  static final Uri _earnUrl = Uri.parse('https://deltanium.com/#economy');
+  static final Uri _siteUrl = Uri.parse('https://deltanium.com');
+
   @override
   Widget build(BuildContext context) {
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isDesktop = screenWidth > 1024;
-    final isTablet = screenWidth > 768 && screenWidth <= 1024;
-
-    return Scaffold(
-      backgroundColor: isDarkMode 
-          ? DeltaniumTheme.backgroundDark 
-          : DeltaniumTheme.backgroundLight,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildHeader(context, isDarkMode, isDesktop),
-              _buildHeroSection(context, isDarkMode, isDesktop, isTablet),
-              _buildFeaturesSection(isDarkMode, isDesktop),
-              _buildArchitectureSection(isDarkMode, isDesktop),
-              _buildCallToActionSection(context, isDarkMode, isDesktop),
-              _buildFooter(isDarkMode),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeader(BuildContext context, bool isDarkMode, bool isDesktop) {
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: isDesktop ? 80 : 24,
-        vertical: 16,
-      ),
-      decoration: BoxDecoration(
-        color: isDarkMode 
-            ? DeltaniumTheme.black.withOpacity(0.8)
-            : DeltaniumTheme.white.withOpacity(0.9),
-        border: Border(
-          bottom: BorderSide(
-            color: isDarkMode 
-                ? DeltaniumTheme.darkDividerColor
-                : DeltaniumTheme.lightDividerColor,
-            width: 1,
-          ),
-        ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      isDarkMode ? DeltaniumTheme.primaryTan : DeltaniumTheme.primaryBrown,
-                      isDarkMode ? DeltaniumTheme.primaryBrown : DeltaniumTheme.primaryTan,
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Center(
-                  child: Text(
-                    'D',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
+    return AppLangBuilder(
+      builder: (context) {
+        final width = MediaQuery.sizeOf(context).width;
+        final wide = width >= 960;
+        final pad = wide ? 40.0 : 20.0;
+        return Scaffold(
+          backgroundColor: Brand.ink,
+          body: SafeArea(
+            child: SingleChildScrollView(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: Brand.maxWidth),
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: pad),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _Header(onLogin: () => context.go(AppRoutes.login)),
+                        SizedBox(height: wide ? 72 : 32),
+                        wide
+                            ? Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Expanded(flex: 6, child: _Hero(wide: wide)),
+                                  const SizedBox(width: 56),
+                                  const Expanded(flex: 5, child: _Banner()),
+                                ],
+                              )
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  _Hero(wide: wide),
+                                  const SizedBox(height: 32),
+                                  const _Banner(),
+                                ],
+                              ),
+                        SizedBox(height: wide ? 96 : 56),
+                        _SectionTitle(kicker: tr('landing.why.kicker'), title: tr('landing.why.title')),
+                        const SizedBox(height: 24),
+                        _Cards(items: [
+                          _CardData(Icons.lock_outline, tr('landing.c1.title'), tr('landing.c1.desc')),
+                          _CardData(Icons.chat_bubble_outline, tr('landing.c2.title'), tr('landing.c2.desc')),
+                          _CardData(Icons.key_outlined, tr('landing.c3.title'), tr('landing.c3.desc')),
+                        ]),
+                        SizedBox(height: wide ? 96 : 56),
+                        _SectionTitle(kicker: tr('landing.earn.kicker'), title: tr('landing.earn.title')),
+                        const SizedBox(height: 24),
+                        _Cards(items: [
+                          _CardData(Icons.storage_outlined, tr('landing.e1.title'), tr('landing.e1.desc')),
+                          _CardData(Icons.verified_outlined, tr('landing.e2.title'), tr('landing.e2.desc')),
+                          _CardData(Icons.favorite_border, tr('landing.e3.title'), tr('landing.e3.desc')),
+                        ]),
+                        const SizedBox(height: 20),
+                        Text(tr('landing.earn.note'), style: _muted.copyWith(fontSize: 13)),
+                        SizedBox(height: wide ? 96 : 56),
+                        _FinalCta(onJoin: () => context.go(AppRoutes.login)),
+                        const SizedBox(height: 48),
+                        const Divider(color: Brand.line, height: 1),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 24),
+                          child: Wrap(
+                            alignment: WrapAlignment.spaceBetween,
+                            runSpacing: 8,
+                            spacing: 16,
+                            children: [
+                              Text(tr('landing.footer'), style: _muted.copyWith(fontSize: 13)),
+                              InkWell(
+                                onTap: () => _open(_siteUrl),
+                                child: Text('deltanium.com', style: _muted.copyWith(fontSize: 13, color: Brand.sand)),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
-              Text(
-                'Deltanium',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: isDarkMode 
-                      ? DeltaniumTheme.primaryTan 
-                      : DeltaniumTheme.primaryBrown,
-                ),
-              ),
-            ],
+            ),
           ),
-          if (isDesktop) ...[
-            Row(
-              children: [
-                _buildNavButton('Features', () {
-                  _scrollToSection(context, 'features');
-                }, isDarkMode),
-                const SizedBox(width: 24),
-                _buildNavButton('Architecture', () {
-                  _scrollToSection(context, 'architecture');
-                }, isDarkMode),
-                const SizedBox(width: 24),
-                _buildNavButton('Contact', () {
-                  _scrollToSection(context, 'footer');
-                }, isDarkMode),
-                const SizedBox(width: 32),
-                _buildPrimaryButton('Get Started', () {
-                  context.go(AppRoutes.login);
-                }, isDarkMode),
-              ],
-            ),
-          ] else ...[
-            IconButton(
-              onPressed: () {
-                context.go(AppRoutes.login);
-              },
-              icon: Icon(
-                Icons.login,
-                color: isDarkMode 
-                    ? DeltaniumTheme.primaryTan 
-                    : DeltaniumTheme.primaryBrown,
-              ),
-            ),
-          ],
+        );
+      },
+    );
+  }
+
+  static Future<void> _open(Uri url) async {
+    await launchUrl(url, mode: LaunchMode.externalApplication);
+  }
+
+  static Future<void> openEarn() => _open(_earnUrl);
+}
+
+final TextStyle _muted = GoogleFonts.manrope(color: Brand.muted, height: 1.5);
+
+TextStyle _display(double size) =>
+    GoogleFonts.syne(color: Brand.text, fontWeight: FontWeight.w800, fontSize: size, letterSpacing: -0.03 * size, height: 1.1);
+
+class _Header extends StatelessWidget {
+  const _Header({required this.onLogin});
+
+  final VoidCallback onLogin;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Row(
+        children: [
+          Text.rich(
+            TextSpan(children: [
+              TextSpan(text: 'Deltanium', style: _display(22)),
+              TextSpan(text: '.', style: _display(22).copyWith(color: Brand.sand)),
+            ]),
+          ),
+          const Spacer(),
+          const LangSwitch(color: Brand.muted, activeColor: Brand.sand),
+          const SizedBox(width: 4),
+          IconButton(
+            tooltip: tr('landing.login'),
+            onPressed: onLogin,
+            icon: const Icon(Icons.login, color: Brand.sand),
+          ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildHeroSection(BuildContext context, bool isDarkMode, bool isDesktop, bool isTablet) {
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: isDesktop ? 80 : 24,
-        vertical: isDesktop ? 120 : 60,
+class _Hero extends StatelessWidget {
+  const _Hero({required this.wide});
+
+  final bool wide;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(tr('landing.hero.title'), style: _display(wide ? 52 : 34)),
+        const SizedBox(height: 18),
+        Text(tr('landing.hero.sub'), style: _muted.copyWith(fontSize: wide ? 18 : 16)),
+        const SizedBox(height: 28),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            FilledButton(
+              onPressed: () => context.go(AppRoutes.login),
+              style: FilledButton.styleFrom(
+                backgroundColor: Brand.sand,
+                foregroundColor: Brand.ink,
+                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Brand.radius)),
+                textStyle: GoogleFonts.manrope(fontWeight: FontWeight.w700, fontSize: 15),
+              ),
+              child: Text(tr('landing.cta.user')),
+            ),
+            OutlinedButton(
+              onPressed: LandingScreen.openEarn,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Brand.sandBright,
+                side: const BorderSide(color: Brand.sand),
+                backgroundColor: Brand.sand.withValues(alpha: 0.08),
+                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Brand.radius)),
+                textStyle: GoogleFonts.manrope(fontWeight: FontWeight.w700, fontSize: 15),
+              ),
+              child: Text(tr('landing.cta.node')),
+            ),
+          ],
+        ),
+        const SizedBox(height: 28),
+        const Divider(color: Brand.line, height: 1),
+        const SizedBox(height: 18),
+        Wrap(
+          spacing: 28,
+          runSpacing: 14,
+          children: [
+            _Stat(value: '80%', label: tr('landing.stat1')),
+            _Stat(value: '90%', label: tr('landing.stat2')),
+            _Stat(value: '1 D = 1 VND', label: tr('landing.stat3')),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _Stat extends StatelessWidget {
+  const _Stat({required this.value, required this.label});
+
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 180),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(value, style: _display(20).copyWith(color: Brand.sandBright)),
+          const SizedBox(height: 2),
+          Text(label, style: _muted.copyWith(fontSize: 13, height: 1.35)),
+        ],
       ),
-      child: isDesktop
-          ? Row(
-              children: [
-                // Left: Text
-                Expanded(
-                  flex: 6,
+    );
+  }
+}
+
+class _Banner extends StatelessWidget {
+  const _Banner();
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 420),
+      child: AspectRatio(
+        aspectRatio: 1,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(Brand.radius * 3),
+            border: Border.all(color: Brand.line),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Image.asset('assets/images/banner.png', fit: BoxFit.cover),
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle({required this.kicker, required this.title});
+
+  final String kicker;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final wide = MediaQuery.sizeOf(context).width >= 960;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          kicker.toUpperCase(),
+          style: GoogleFonts.manrope(color: Brand.sand, fontWeight: FontWeight.w700, fontSize: 12, letterSpacing: 1.6),
+        ),
+        const SizedBox(height: 10),
+        Text(title, style: _display(wide ? 36 : 26)),
+      ],
+    );
+  }
+}
+
+class _CardData {
+  const _CardData(this.icon, this.title, this.desc);
+
+  final IconData icon;
+  final String title;
+  final String desc;
+}
+
+class _Cards extends StatelessWidget {
+  const _Cards({required this.items});
+
+  final List<_CardData> items;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, c) {
+        final cols = c.maxWidth >= 860 ? 3 : (c.maxWidth >= 560 ? 2 : 1);
+        final w = (c.maxWidth - (cols - 1) * 16) / cols;
+        return Wrap(
+          spacing: 16,
+          runSpacing: 16,
+          children: [
+            for (final it in items)
+              SizedBox(
+                width: w,
+                child: Container(
+                  padding: const EdgeInsets.all(22),
+                  decoration: BoxDecoration(
+                    color: Brand.panel.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(Brand.radius),
+                    border: Border.all(color: Brand.line),
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'The Future of Decentralized Social Media',
-                        style: TextStyle(
-                          fontSize: 56,
-                          fontWeight: FontWeight.bold,
-                          height: 1.1,
-                          color: isDarkMode
-                              ? DeltaniumTheme.darkTextPrimaryColor
-                              : DeltaniumTheme.lightTextPrimaryColor,
-                        ),
-                      ),
-                      const SizedBox(height: 32),
-                      Text(
-                        'Own your data, enjoy true privacy, and connect without limits. Deltanium combines blockchain security with a modern social experience.',
-                        style: TextStyle(
-                          fontSize: 22,
-                          height: 1.6,
-                          color: isDarkMode
-                              ? DeltaniumTheme.darkTextSecondaryColor
-                              : DeltaniumTheme.lightTextSecondaryColor,
-                        ),
-                      ),
-                      const SizedBox(height: 48),
-                      Row(
-                        children: [
-                          _buildPrimaryButton('Start Free', () {
-                            context.go(AppRoutes.login);
-                          }, isDarkMode, large: true),
-                          const SizedBox(width: 24),
-                          _buildSecondaryButton('Learn More', () {
-                            _scrollToSection(context, 'features');
-                          }, isDarkMode, large: true),
-                        ],
-                      ),
-                      const SizedBox(height: 32),
-                      _buildTrustIndicators(isDarkMode),
+                      Icon(it.icon, color: Brand.sand, size: 26),
+                      const SizedBox(height: 14),
+                      Text(it.title, style: _display(17)),
+                      const SizedBox(height: 8),
+                      Text(it.desc, style: _muted.copyWith(fontSize: 14)),
                     ],
                   ),
                 ),
-                const SizedBox(width: 80),
-                // Right: Illustration
-                Expanded(
-                  flex: 4,
-                  child: _buildHeroImage(isDarkMode),
-                ),
-              ],
-            )
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Container(
-                  width: isTablet ? 300 : 220,
-                  height: isTablet ? 300 : 220,
-                  child: _buildHeroImage(isDarkMode),
-                ),
-                const SizedBox(height: 40),
-                Text(
-                  'The Future of Decentralized Social Media',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: isTablet ? 40 : 28,
-                    fontWeight: FontWeight.bold,
-                    height: 1.2,
-                    color: isDarkMode
-                        ? DeltaniumTheme.darkTextPrimaryColor
-                        : DeltaniumTheme.lightTextPrimaryColor,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'Own your data, enjoy true privacy, and connect without limits. Deltanium combines blockchain security with a modern social experience.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 16,
-                    height: 1.6,
-                    color: isDarkMode
-                        ? DeltaniumTheme.darkTextSecondaryColor
-                        : DeltaniumTheme.lightTextSecondaryColor,
-                  ),
-                ),
-                const SizedBox(height: 32),
-                _buildPrimaryButton('Start Free', () {
-                  context.go(AppRoutes.login);
-                }, isDarkMode, large: true),
-                const SizedBox(height: 16),
-                _buildSecondaryButton('Learn More', () {
-                  _scrollToSection(context, 'features');
-                }, isDarkMode, large: true),
-                const SizedBox(height: 32),
-                _buildTrustIndicators(isDarkMode),
-              ],
-            ),
+              ),
+          ],
+        );
+      },
     );
   }
+}
 
-  Widget _buildHeroImage(bool isDarkMode) {
+class _FinalCta extends StatelessWidget {
+  const _FinalCta({required this.onJoin});
+
+  final VoidCallback onJoin;
+
+  @override
+  Widget build(BuildContext context) {
+    final wide = MediaQuery.sizeOf(context).width >= 960;
     return Container(
+      padding: EdgeInsets.all(wide ? 40 : 24),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
+        borderRadius: BorderRadius.circular(Brand.radius * 2),
+        border: Border.all(color: Brand.line),
+        gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            isDarkMode ? DeltaniumTheme.primaryTan.withOpacity(0.2) : DeltaniumTheme.primaryBrown.withOpacity(0.1),
-            isDarkMode ? DeltaniumTheme.primaryBrown.withOpacity(0.2) : DeltaniumTheme.primaryTan.withOpacity(0.1),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isDarkMode ? DeltaniumTheme.darkDividerColor : DeltaniumTheme.lightDividerColor,
-        ),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: Image.asset(
-          'assets/images/banner.png',
-          fit: BoxFit.cover,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTrustIndicators(bool isDarkMode) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        _buildTrustBadge('🔒', 'Encrypted', isDarkMode),
-        const SizedBox(width: 24),
-        _buildTrustBadge('⛓️', 'Blockchain', isDarkMode),
-        const SizedBox(width: 24),
-        _buildTrustBadge('🌐', 'Decentralized', isDarkMode),
-      ],
-    );
-  }
-
-  Widget _buildTrustBadge(String emoji, String label, bool isDarkMode) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: isDarkMode
-            ? DeltaniumTheme.surfaceDark.withOpacity(0.5)
-            : DeltaniumTheme.surfaceLight.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isDarkMode
-              ? DeltaniumTheme.darkDividerColor
-              : DeltaniumTheme.lightDividerColor,
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(emoji, style: const TextStyle(fontSize: 16)),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: isDarkMode
-                  ? DeltaniumTheme.darkTextPrimaryColor
-                  : DeltaniumTheme.lightTextPrimaryColor,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFeaturesSection(bool isDarkMode, bool isDesktop) {
-    return Container(
-      key: const ValueKey('features'),
-      padding: EdgeInsets.symmetric(
-        horizontal: isDesktop ? 80 : 24,
-        vertical: isDesktop ? 100 : 60,
-      ),
-      color: isDarkMode
-          ? DeltaniumTheme.surfaceDark.withOpacity(0.3)
-          : DeltaniumTheme.surfaceLight.withOpacity(0.3),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Text(
-            'Key Features',
-            style: TextStyle(
-              fontSize: isDesktop ? 40 : 28,
-              fontWeight: FontWeight.bold,
-              color: isDarkMode
-                  ? DeltaniumTheme.darkTextPrimaryColor
-                  : DeltaniumTheme.lightTextPrimaryColor,
-            ),
-          ),
-          const SizedBox(height: 32),
-          Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 32,
-            runSpacing: 32,
-            children: [
-              _buildFeatureCard(
-                icon: Icons.vpn_key,
-                title: 'Secure Registration',
-                desc: 'Generate mnemonic and public key. No centralized password storage.',
-                isDarkMode: isDarkMode,
-              ),
-              _buildFeatureCard(
-                icon: Icons.cloud_upload,
-                title: 'Decentralized Storage',
-                desc: 'Files, posts, and data are stored across distributed nodes.',
-                isDarkMode: isDarkMode,
-              ),
-              _buildFeatureCard(
-                icon: Icons.verified_user,
-                title: 'Blockchain Authentication',
-                desc: 'All actions are digitally signed and verifiable.',
-                isDarkMode: isDarkMode,
-              ),
-              _buildFeatureCard(
-                icon: Icons.lock,
-                title: 'True Privacy',
-                desc: 'End-to-end encryption. No censorship.',
-                isDarkMode: isDarkMode,
-              ),
-              _buildFeatureCard(
-                icon: Icons.devices,
-                title: 'Modern UI/UX',
-                desc: 'Cross-platform, responsive, dark mode, smooth experience.',
-                isDarkMode: isDarkMode,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFeatureCard({required IconData icon, required String title, required String desc, required bool isDarkMode}) {
-    return Container(
-      width: 260,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: isDarkMode ? DeltaniumTheme.black : DeltaniumTheme.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: (isDarkMode ? Colors.black : Colors.grey).withOpacity(0.08),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-        border: Border.all(
-          color: isDarkMode ? DeltaniumTheme.darkDividerColor : DeltaniumTheme.lightDividerColor,
+          colors: [Color(0xFF1A2822), Color(0xFF121A16)],
         ),
       ),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 40, color: isDarkMode ? DeltaniumTheme.primaryTan : DeltaniumTheme.primaryBrown),
-          const SizedBox(height: 20),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: isDarkMode ? DeltaniumTheme.primaryTan : DeltaniumTheme.primaryBrown,
-            ),
-          ),
+          Text(tr('landing.final.title'), style: _display(wide ? 32 : 24)),
           const SizedBox(height: 12),
-          Text(
-            desc,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 15,
-              color: isDarkMode
-                  ? DeltaniumTheme.darkTextSecondaryColor
-                  : DeltaniumTheme.lightTextSecondaryColor,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildArchitectureSection(bool isDarkMode, bool isDesktop) {
-    return Container(
-      key: const ValueKey('architecture'),
-      padding: EdgeInsets.symmetric(
-        horizontal: isDesktop ? 80 : 24,
-        vertical: isDesktop ? 80 : 40,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Text(
-            'System Architecture',
-            style: TextStyle(
-              fontSize: isDesktop ? 36 : 24,
-              fontWeight: FontWeight.bold,
-              color: isDarkMode
-                  ? DeltaniumTheme.darkTextPrimaryColor
-                  : DeltaniumTheme.lightTextPrimaryColor,
-            ),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            'Deltanium combines blockchain, decentralized storage, and a modern social network. All actions are digitally signed, data is end-to-end encrypted, and stored across distributed nodes.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 16,
-              color: isDarkMode
-                  ? DeltaniumTheme.darkTextSecondaryColor
-                  : DeltaniumTheme.lightTextSecondaryColor,
-            ),
-          ),
-          const SizedBox(height: 40),
-          _buildArchitectureDiagram(isDarkMode),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildArchitectureDiagram(bool isDarkMode) {
-    return Container(
-      width: 600,
-      constraints: const BoxConstraints(maxWidth: 800),
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: isDarkMode ? DeltaniumTheme.surfaceDark : DeltaniumTheme.surfaceLight,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isDarkMode ? DeltaniumTheme.darkDividerColor : DeltaniumTheme.lightDividerColor,
-        ),
-      ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          Text(tr('landing.final.sub'), style: _muted.copyWith(fontSize: 15)),
+          const SizedBox(height: 22),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
             children: [
-              _buildArchNode(Icons.person, 'User', isDarkMode),
-              Icon(Icons.arrow_forward, color: isDarkMode ? DeltaniumTheme.primaryTan : DeltaniumTheme.primaryBrown),
-              _buildArchNode(Icons.vpn_key, 'Mnemonic\nPublic Key', isDarkMode),
-              Icon(Icons.arrow_forward, color: isDarkMode ? DeltaniumTheme.primaryTan : DeltaniumTheme.primaryBrown),
-              _buildArchNode(Icons.cloud, 'Store Node', isDarkMode),
-              Icon(Icons.arrow_forward, color: isDarkMode ? DeltaniumTheme.primaryTan : DeltaniumTheme.primaryBrown),
-              _buildArchNode(Icons.verified, 'Blockchain', isDarkMode),
+              FilledButton(
+                onPressed: onJoin,
+                style: FilledButton.styleFrom(
+                  backgroundColor: Brand.sand,
+                  foregroundColor: Brand.ink,
+                  padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Brand.radius)),
+                  textStyle: GoogleFonts.manrope(fontWeight: FontWeight.w700, fontSize: 15),
+                ),
+                child: Text(tr('landing.cta.user')),
+              ),
+              TextButton(
+                onPressed: LandingScreen.openEarn,
+                style: TextButton.styleFrom(
+                  foregroundColor: Brand.sand,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+                  textStyle: GoogleFonts.manrope(fontWeight: FontWeight.w700, fontSize: 15),
+                ),
+                child: Text(tr('landing.cta.nodeMore')),
+              ),
             ],
           ),
-          const SizedBox(height: 16),
-          Text(
-            'Flow: Register → Generate mnemonic/public key → Login → Post/file → Store node → Blockchain verification',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 14,
-              color: isDarkMode
-                  ? DeltaniumTheme.darkTextSecondaryColor
-                  : DeltaniumTheme.lightTextSecondaryColor,
-            ),
-          ),
         ],
       ),
     );
   }
-
-  Widget _buildArchNode(IconData icon, String label, bool isDarkMode) {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: isDarkMode ? DeltaniumTheme.primaryTan.withOpacity(0.15) : DeltaniumTheme.primaryBrown.withOpacity(0.10),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Icon(icon, size: 32, color: isDarkMode ? DeltaniumTheme.primaryTan : DeltaniumTheme.primaryBrown),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-            color: isDarkMode
-                ? DeltaniumTheme.darkTextPrimaryColor
-                : DeltaniumTheme.lightTextPrimaryColor,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCallToActionSection(BuildContext context, bool isDarkMode, bool isDesktop) {
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: isDesktop ? 80 : 24,
-        vertical: isDesktop ? 80 : 40,
-      ),
-      alignment: Alignment.center,
-      child: Column(
-        children: [
-          Text(
-            'Ready to join the decentralized social network?',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: isDesktop ? 32 : 22,
-              fontWeight: FontWeight.bold,
-              color: isDarkMode
-                  ? DeltaniumTheme.primaryTan
-                  : DeltaniumTheme.primaryBrown,
-            ),
-          ),
-          const SizedBox(height: 24),
-          _buildPrimaryButton('Sign Up / Login Now', () {
-            context.go(AppRoutes.login);
-          }, isDarkMode, large: true),
-          const SizedBox(height: 16),
-          _buildSecondaryButton('View Documentation', () {
-            // TODO: Link to docs/github
-          }, isDarkMode, large: false),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFooter(bool isDarkMode) {
-    return Container(
-      key: const ValueKey('footer'),
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-      color: isDarkMode ? DeltaniumTheme.black : DeltaniumTheme.white,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Text(
-            'Deltanium © 2024 | Decentralized Social Network | MIT License',
-            style: TextStyle(
-              fontSize: 14,
-              color: isDarkMode
-                  ? DeltaniumTheme.darkTextSecondaryColor
-                  : DeltaniumTheme.lightTextSecondaryColor,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Github: github.com/deltanium | Contact: contact@deltanium.org',
-            style: TextStyle(
-              fontSize: 13,
-              color: isDarkMode
-                  ? DeltaniumTheme.darkTextSecondaryColor
-                  : DeltaniumTheme.lightTextSecondaryColor,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPrimaryButton(String label, VoidCallback onPressed, bool isDarkMode, {bool large = false}) {
-    return ElevatedButton(
-      onPressed: onPressed,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: isDarkMode ? DeltaniumTheme.primaryTan : DeltaniumTheme.primaryBrown,
-        foregroundColor: DeltaniumTheme.white,
-        padding: EdgeInsets.symmetric(vertical: large ? 20 : 14, horizontal: large ? 36 : 20),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(30),
-        ),
-        textStyle: TextStyle(fontSize: large ? 18 : 15, fontWeight: FontWeight.bold),
-        elevation: 2,
-      ),
-      child: Text(label),
-    );
-  }
-
-  Widget _buildSecondaryButton(String label, VoidCallback onPressed, bool isDarkMode, {bool large = false}) {
-    return OutlinedButton(
-      onPressed: onPressed,
-      style: OutlinedButton.styleFrom(
-        foregroundColor: isDarkMode ? DeltaniumTheme.primaryTan : DeltaniumTheme.primaryBrown,
-        side: BorderSide(color: isDarkMode ? DeltaniumTheme.primaryTan : DeltaniumTheme.primaryBrown, width: 2),
-        padding: EdgeInsets.symmetric(vertical: large ? 20 : 14, horizontal: large ? 36 : 20),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(30),
-        ),
-        textStyle: TextStyle(fontSize: large ? 18 : 15, fontWeight: FontWeight.bold),
-      ),
-      child: Text(label),
-    );
-  }
-
-  Widget _buildNavButton(String text, VoidCallback onPressed, bool isDarkMode) {
-    return TextButton(
-      onPressed: onPressed,
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 16,
-          color: isDarkMode
-              ? DeltaniumTheme.darkTextPrimaryColor
-              : DeltaniumTheme.lightTextPrimaryColor,
-        ),
-      ),
-    );
-  }
-
-  void _scrollToSection(BuildContext context, String sectionKey) {
-    // TODO: Implement scroll to section if needed (requires ScrollController)
-  }
-} 
+}

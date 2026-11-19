@@ -15,6 +15,11 @@ import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:deltanium_app/services/egress_receipt_service.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:deltanium_app/utils/server_time.dart';
+
+/// Default visibility for a new comment: public on a public post, post-author-only otherwise.
+String defaultCommentShareType(String postEncryptedType) =>
+    postEncryptedType.toLowerCase() == 'public' ? 'public' : 'author';
 
 class PostCommentsSection extends StatefulWidget {
   final PostMetadata post;
@@ -43,7 +48,9 @@ class _PostCommentsSectionState extends State<PostCommentsSection> {
   final TextEditingController _commentController = TextEditingController();
   bool _isPosting = false;
   String? _postingProgressMessage; // 🆕 Progress message for posting
-  String _selectedShareType = 'author'; // 'author' or 'public'
+  // 'author' or 'public'. Public posts default to public comments; private posts keep
+  // comments private so a reply never exposes a post that only some people can see.
+  late String _selectedShareType = defaultCommentShareType(widget.post.encryptedType);
   final ImagePicker _imagePicker = ImagePicker(); // 🆕 Image picker
   List<Map<String, dynamic>> _selectedMedia = []; // 🆕 Selected images
   final Map<String, bool> _imageDownloadStatus = {}; // 🆕 Track image download status
@@ -1099,7 +1106,7 @@ class _PostCommentsSectionState extends State<PostCommentsSection> {
 
   String _formatDate(String dateString) {
     try {
-      final date = DateTime.parse(dateString);
+      final date = ServerTime.parse(dateString);
       final now = DateTime.now();
       final diff = now.difference(date);
       

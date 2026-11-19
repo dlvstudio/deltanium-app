@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:deltanium_app/config/theme.dart';
+import 'package:deltanium_app/utils/server_time.dart';
 
 class ConversationTile extends StatelessWidget {
   final Map<String, dynamic> conversation;
@@ -132,7 +133,7 @@ class ConversationTile extends StatelessWidget {
   String _formatTime(String isoTime) {
     if (isoTime.isEmpty) return '';
     try {
-      final dt = DateTime.parse(isoTime);
+      final dt = ServerTime.parse(isoTime);
       final now = DateTime.now();
       final diff = now.difference(dt);
 

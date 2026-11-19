@@ -4,6 +4,7 @@ import 'package:bip39/bip39.dart' as bip39;
 import 'package:deltanium_app/app/router.dart';
 import 'package:deltanium_app/config/brand.dart';
 import 'package:deltanium_app/config/constants.dart';
+import 'package:deltanium_app/l10n/app_lang.dart';
 import 'package:deltanium_app/models/user_profile.dart';
 import 'package:deltanium_app/services/app_logger.dart';
 import 'package:deltanium_app/services/auth_service.dart';
@@ -128,7 +129,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         Row(
                           children: [
                             Expanded(
-                              child: Text('Restore identity', style: _display.copyWith(fontSize: 22)),
+                              child: Text(tr('restore.title'), style: _display.copyWith(fontSize: 22)),
                             ),
                             IconButton(
                               onPressed: restoring ? null : () => Navigator.pop(dialogContext),
@@ -137,7 +138,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ],
                         ),
                         Text(
-                          'Enter the 12-word recovery phrase from when you created the account. No password is stored on the network.',
+                          tr('restore.sub'),
                           style: _muted,
                         ),
                         const SizedBox(height: 16),
@@ -148,7 +149,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           enabled: !restoring,
                           style: _body,
                           decoration: _fieldDecoration(
-                            label: 'Recovery phrase',
+                            label: tr('restore.phrase'),
                             hint: 'word1 word2 word3 …',
                           ),
                         ),
@@ -168,7 +169,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                         .toLowerCase()
                                         .replaceAll(RegExp(r'\s+'), ' ');
                                     if (!bip39.validateMnemonic(phrase)) {
-                                      setDialogState(() => localError = 'Invalid recovery phrase.');
+                                      setDialogState(() => localError = tr('restore.invalid'));
                                       return;
                                     }
                                     setDialogState(() {
@@ -182,7 +183,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                       if (profile == null || (profile.email ?? '').isEmpty) {
                                         setDialogState(() {
                                           restoring = false;
-                                          localError = 'No registered account found for this phrase.';
+                                          localError = tr('restore.notFound');
                                         });
                                         return;
                                       }
@@ -196,7 +197,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     } catch (e) {
                                       setDialogState(() {
                                         restoring = false;
-                                        localError = 'Restore failed: $e';
+                                        localError = tr('restore.failed', {'e': '$e'});
                                       });
                                     }
                                   },
@@ -208,7 +209,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     child: CircularProgressIndicator(strokeWidth: 2, color: Brand.ink),
                                   )
                                 : Text(
-                                    'Restore & continue',
+                                    tr('restore.submit'),
                                     style: GoogleFonts.manrope(fontWeight: FontWeight.w700),
                                   ),
                           ),
@@ -268,7 +269,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             children: [
                               Expanded(
                                 child: Text(
-                                  _mnemonic == null ? 'Create account' : 'Save your keys',
+                                  _mnemonic == null ? tr('register.title') : tr('register.saveKeys'),
                                   style: _display.copyWith(fontSize: 22),
                                 ),
                               ),
@@ -281,8 +282,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           Text(
                             _mnemonic == null
-                                ? 'Your identity starts on this device. We never store a password — keep your recovery phrase safe.'
-                                : 'Write these words down offline. Anyone with them can control this identity.',
+                                ? tr('register.sub')
+                                : tr('register.saveKeys.sub'),
                             style: _muted,
                           ),
                           const SizedBox(height: 22),
@@ -291,10 +292,10 @@ class _LoginScreenState extends State<LoginScreen> {
                               controller: _emailController,
                               keyboardType: TextInputType.emailAddress,
                               style: _body,
-                              decoration: _fieldDecoration(label: 'Email'),
+                              decoration: _fieldDecoration(label: tr('register.email')),
                               validator: (value) {
-                                if (value == null || value.isEmpty) return 'Enter your email';
-                                if (!value.contains('@')) return 'Enter a valid email';
+                                if (value == null || value.isEmpty) return tr('register.email.empty');
+                                if (!value.contains('@')) return tr('register.email.invalid');
                                 return null;
                               },
                             ),
@@ -302,9 +303,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             TextFormField(
                               controller: fullNameController,
                               style: _body,
-                              decoration: _fieldDecoration(label: 'Full name'),
+                              decoration: _fieldDecoration(label: tr('register.name')),
                               validator: (value) {
-                                if (value == null || value.isEmpty) return 'Enter your full name';
+                                if (value == null || value.isEmpty) return tr('register.name.empty');
                                 return null;
                               },
                             ),
@@ -323,13 +324,13 @@ class _LoginScreenState extends State<LoginScreen> {
                                 }
                               },
                               child: InputDecorator(
-                                decoration: _fieldDecoration(label: 'Date of birth'),
+                                decoration: _fieldDecoration(label: tr('register.dob')),
                                 child: Text(
                                   selectedDateOfBirth != null
                                       ? '${selectedDateOfBirth!.day.toString().padLeft(2, '0')}/'
                                           '${selectedDateOfBirth!.month.toString().padLeft(2, '0')}/'
                                           '${selectedDateOfBirth!.year}'
-                                      : 'Select date',
+                                      : tr('register.dob.select'),
                                   style: selectedDateOfBirth != null ? _body : _muted,
                                 ),
                               ),
@@ -339,13 +340,13 @@ class _LoginScreenState extends State<LoginScreen> {
                               controller: bioController,
                               maxLines: 2,
                               style: _body,
-                              decoration: _fieldDecoration(label: 'Bio (optional)'),
+                              decoration: _fieldDecoration(label: tr('register.bio')),
                             ),
                             const SizedBox(height: 12),
                             TextFormField(
                               controller: avatarUrlController,
                               style: _body,
-                              decoration: _fieldDecoration(label: 'Avatar URL (optional)'),
+                              decoration: _fieldDecoration(label: tr('register.avatar')),
                             ),
                             if (_registerErrorMessage != null) ...[
                               const SizedBox(height: 14),
@@ -371,7 +372,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     : () async {
                                         if (selectedDateOfBirth == null) {
                                           setDialogState(() {
-                                            _registerErrorMessage = 'Please select your date of birth.';
+                                            _registerErrorMessage = tr('register.dob.missing');
                                           });
                                           return;
                                         }
@@ -433,7 +434,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                               message = errorData['message']?.toString() ?? raw;
                                             } catch (_) {
                                               message = raw.isEmpty
-                                                  ? 'Registration failed. Please try again.'
+                                                  ? tr('register.failed')
                                                   : raw;
                                             }
                                             setDialogState(() {
@@ -443,7 +444,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                           }
                                         } catch (e) {
                                           setDialogState(() {
-                                            _registerErrorMessage = 'An error occurred: $e';
+                                            _registerErrorMessage = tr('login.err.generic', {'e': '$e'});
                                             _isRegistering = false;
                                           });
                                         }
@@ -456,13 +457,13 @@ class _LoginScreenState extends State<LoginScreen> {
                                         child: CircularProgressIndicator(strokeWidth: 2, color: Brand.ink),
                                       )
                                     : Text(
-                                        'Create account',
+                                        tr('register.submit'),
                                         style: GoogleFonts.manrope(fontWeight: FontWeight.w700, fontSize: 15),
                                       ),
                               ),
                             ),
                           ] else ...[
-                            Text('Recovery phrase', style: GoogleFonts.manrope(fontWeight: FontWeight.w700, color: Brand.text)),
+                            Text(tr('register.phrase'), style: GoogleFonts.manrope(fontWeight: FontWeight.w700, color: Brand.text)),
                             const SizedBox(height: 8),
                             Container(
                               width: double.infinity,
@@ -481,16 +482,16 @@ class _LoginScreenState extends State<LoginScreen> {
                                 onPressed: () {
                                   Clipboard.setData(ClipboardData(text: _mnemonic!));
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Recovery phrase copied')),
+                                    SnackBar(content: Text(tr('register.phraseCopied'))),
                                   );
                                 },
                                 style: _ghostButton,
                                 icon: const Icon(Icons.copy, size: 16),
-                                label: const Text('Copy phrase'),
+                                label: Text(tr('register.copyPhrase')),
                               ),
                             ),
                             const SizedBox(height: 18),
-                            Text('Public key', style: GoogleFonts.manrope(fontWeight: FontWeight.w700, color: Brand.text)),
+                            Text(tr('register.publicKey'), style: GoogleFonts.manrope(fontWeight: FontWeight.w700, color: Brand.text)),
                             const SizedBox(height: 8),
                             Container(
                               width: double.infinity,
@@ -515,11 +516,11 @@ class _LoginScreenState extends State<LoginScreen> {
                                   await _loadLocalUsers();
                                   if (!context.mounted) return;
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Saved on this device')),
+                                    SnackBar(content: Text(tr('register.saved'))),
                                   );
                                 },
                                 style: _ghostButton,
-                                child: const Text('Save on this device'),
+                                child: Text(tr('register.saveOnDevice')),
                               ),
                             ),
                             const SizedBox(height: 10),
@@ -536,14 +537,14 @@ class _LoginScreenState extends State<LoginScreen> {
                                   };
                                   Navigator.of(context).pop();
                                   ScaffoldMessenger.of(this.context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Account created. Keep your recovery phrase safe.'),
+                                    SnackBar(
+                                      content: Text(tr('register.created')),
                                     ),
                                   );
                                   await _loginWithLocalUser(user);
                                 },
                                 style: _primaryButton,
-                                child: Text('Continue to the app',
+                                child: Text(tr('register.continue'),
                                     style: GoogleFonts.manrope(fontWeight: FontWeight.w700)),
                               ),
                             ),
@@ -596,13 +597,13 @@ class _LoginScreenState extends State<LoginScreen> {
           if (mounted) context.go(AppRoutes.localUserHome, extra: userProfile);
         } else {
           setState(() {
-            _errorMessage = 'Failed to authenticate. API may be unavailable.';
+            _errorMessage = tr('login.err.auth');
           });
         }
       }
     } catch (e) {
       AppLogger.log('Local user login error: $e');
-      setState(() => _errorMessage = 'An error occurred: $e');
+      setState(() => _errorMessage = tr('login.err.generic', {'e': '$e'}));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -623,7 +624,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final width = MediaQuery.sizeOf(context).width;
     final isWide = width >= 960;
 
-    return Scaffold(
+    return AppLangBuilder(builder: (context) => Scaffold(
       backgroundColor: Brand.ink,
       body: Stack(
         children: [
@@ -711,9 +712,19 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
           ),
+          Positioned(
+            top: 0,
+            right: 0,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: LangSwitch(color: Brand.muted, activeColor: Brand.sand),
+              ),
+            ),
+          ),
         ],
       ),
-    );
+    ));
   }
 
   Widget _buildAuthCard() {
@@ -730,14 +741,14 @@ class _LoginScreenState extends State<LoginScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            hasSaved ? 'Welcome back' : 'Join the network',
+            hasSaved ? tr('login.welcomeBack') : tr('login.join'),
             style: _display.copyWith(fontSize: 28, letterSpacing: -0.6),
           ),
           const SizedBox(height: 8),
           Text(
             hasSaved
-                ? 'Continue with an identity saved on this device, or restore with your recovery phrase.'
-                : 'Create your identity on this device. Your keys stay with you — we never read your private content.',
+                ? tr('login.welcomeBack.sub')
+                : tr('login.join.sub'),
             style: _muted,
           ),
           if (_errorMessage != null) ...[
@@ -746,7 +757,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ],
           if (hasSaved) ...[
             const SizedBox(height: 20),
-            Text('On this device', style: GoogleFonts.manrope(fontWeight: FontWeight.w700, color: Brand.text)),
+            Text(tr('login.onDevice'), style: GoogleFonts.manrope(fontWeight: FontWeight.w700, color: Brand.text)),
             const SizedBox(height: 10),
             ..._localUsers.map(
               (user) => Padding(
@@ -765,7 +776,7 @@ class _LoginScreenState extends State<LoginScreen> {
               onPressed: _isLoading ? null : _showRegistrationDialog,
               style: _primaryButton,
               child: Text(
-                hasSaved ? 'Create another account' : 'Become a user',
+                hasSaved ? tr('login.createAnother') : tr('login.becomeUser'),
                 style: GoogleFonts.manrope(fontWeight: FontWeight.w700, fontSize: 15),
               ),
             ),
@@ -777,7 +788,7 @@ class _LoginScreenState extends State<LoginScreen> {
               onPressed: _isLoading ? null : _showRestoreDialog,
               style: _ghostButton,
               child: Text(
-                'Restore with recovery phrase',
+                tr('login.restoreWithPhrase'),
                 style: GoogleFonts.manrope(fontWeight: FontWeight.w600, fontSize: 14),
               ),
             ),
@@ -849,7 +860,9 @@ class _BrandPanel extends StatelessWidget {
   final bool compact;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppLangBuilder(builder: _build);
+
+  Widget _build(BuildContext context) {
     return Container(
       padding: EdgeInsets.all(compact ? 24 : 36),
       decoration: BoxDecoration(
@@ -897,7 +910,7 @@ class _BrandPanel extends StatelessWidget {
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 420),
             child: Text(
-              'Your social life — without selling your privacy.',
+              tr('login.brand.line'),
               style: GoogleFonts.manrope(
                 fontSize: compact ? 16 : 18,
                 height: 1.4,
@@ -910,7 +923,7 @@ class _BrandPanel extends StatelessWidget {
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 420),
             child: Text(
-              'Post, follow friends, and chat on a network you actually own. Your keys stay with you.',
+              tr('login.brand.sub'),
               style: GoogleFonts.manrope(
                 fontSize: compact ? 14 : 15,
                 height: 1.5,
@@ -920,11 +933,11 @@ class _BrandPanel extends StatelessWidget {
           ),
           if (!compact) ...[
             const SizedBox(height: 28),
-            const _BrandPoint(text: 'You hold the keys'),
+            _BrandPoint(text: tr('login.point.keys')),
             const SizedBox(height: 10),
-            const _BrandPoint(text: 'Private means private'),
+            _BrandPoint(text: tr('login.point.private')),
             const SizedBox(height: 10),
-            const _BrandPoint(text: 'A network you help grow'),
+            _BrandPoint(text: tr('login.point.grow')),
           ],
         ],
       ),
