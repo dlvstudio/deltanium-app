@@ -13,12 +13,14 @@ class UserService {
 
   /// Signed headers when [publicKey] is the signed-in user: Central returns email and date of birth only to
   /// the profile's owner. Anyone else gets plain headers and the public projection.
-  Future<Map<String, String>> _profileHeaders(String publicKey) async {
+  /// Signed as the owner when we hold the owner's key: the signed-in user's, or [ownerMnemonic] (restore,
+  /// before anyone is signed in). The API only returns private fields such as the email to the owner.
+  Future<Map<String, String>> _profileHeaders(String publicKey, {String? ownerMnemonic}) async {
     final headers = {'Content-Type': 'application/json'};
     try {
-      final auth = await AuthService().getCurrentAuthInfo();
-      final mine = auth?['publicKey'];
-      final mnemonic = auth?['mnemonic'];
+      final auth = ownerMnemonic == null ? await AuthService().getCurrentAuthInfo() : null;
+      final mine = ownerMnemonic != null ? publicKey : auth?['publicKey'];
+      final mnemonic = ownerMnemonic ?? auth?['mnemonic'];
       if (mine == null || mnemonic == null) return headers;
       if (CryptoService.normalizePublicKey(mine) != CryptoService.normalizePublicKey(publicKey)) return headers;
       final timestamp = (DateTime.now().millisecondsSinceEpoch / 1000).floor().toString();
@@ -36,11 +38,11 @@ class UserService {
   }
 
   // Get user profile using public key
-  Future<UserProfile?> getUserProfile(String publicKey) async {
+  Future<UserProfile?> getUserProfile(String publicKey, {String? ownerMnemonic}) async {
     try {
       final response = await http.get(
         Uri.parse('$baseUrl/user/profile/$publicKey'),
-        headers: await _profileHeaders(publicKey),
+        headers: await _profileHeaders(publicKey, ownerMnemonic: ownerMnemonic),
       );
 
       if (response.statusCode == 200) {

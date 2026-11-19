@@ -107,7 +107,7 @@ class CryptoService {
 
   // Lưu thông tin user (email, mnemonic, pubkey) vào local (SharedPreferences)
   // 🔧 FIX: Always normalize public key to compressed format before saving
-  static Future<void> saveUser(String email, String mnemonic, String pubkey) async {
+  static Future<void> saveUser(String email, String mnemonic, String pubkey, {String? name}) async {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getStringList("saved_users") ?? [];
     
@@ -115,7 +115,12 @@ class CryptoService {
     final normalizedPubkey = normalizePublicKey(pubkey);
     AppLogger.log('CryptoService.saveUser: Normalizing key ${pubkey.length} -> ${normalizedPubkey.length} chars');
     
-    final user = jsonEncode({"email": email, "mnemonic": mnemonic, "pubkey": normalizedPubkey});
+    final user = jsonEncode({
+      "email": email,
+      "mnemonic": mnemonic,
+      "pubkey": normalizedPubkey,
+      if (name != null && name.isNotEmpty) "name": name,
+    });
     if (!saved.contains(user)) {
       saved.add(user);
       await prefs.setStringList("saved_users", saved);

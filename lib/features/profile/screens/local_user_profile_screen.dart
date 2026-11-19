@@ -2,6 +2,8 @@ import 'package:deltanium_app/app/router.dart';
 import 'package:deltanium_app/config/brand.dart';
 import 'package:deltanium_app/config/constants.dart';
 import 'package:deltanium_app/config/theme.dart';
+import 'package:deltanium_app/features/wallet/topup_payment.dart';
+import 'package:deltanium_app/l10n/app_lang.dart';
 import 'package:deltanium_app/models/user_profile.dart';
 import 'package:deltanium_app/services/auth_service.dart';
 import 'package:deltanium_app/services/crypto_service.dart';
@@ -61,7 +63,7 @@ class _LocalUserProfileScreenState extends State<LocalUserProfileScreen> {
     final byChannel = _economics?['onRampFeeByChannel'] as Map<String, dynamic>?;
     final v = byChannel?[channel] as num?;
     if (v != null) return v.toDouble();
-    return channel == 'card' ? 5 : 3;
+    return switch (channel) { 'card' => 5, 'paypal' => 6, _ => 3 };
   }
 
   void _toast(String msg) {
@@ -84,39 +86,44 @@ class _LocalUserProfileScreenState extends State<LocalUserProfileScreen> {
           final credited = amount * (100 - fee) / 100 / vndPerD;
           return AlertDialog(
             backgroundColor: Brand.panel,
-            title: Text('Top up D', style: GoogleFonts.syne(color: Brand.text)),
+            title: Text(tr('topup.title'), style: GoogleFonts.syne(color: Brand.text)),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Rate ${vndPerD.toStringAsFixed(0)} VND = 1 D (1 DLT = ${DFormat.d(AppConstants.dPerDlt)}). '
-                  'Every D is backed 1:1 by VND in the network reserve. Minimum ${DFormat.vnd(minTopUp)}.',
+                  tr('topup.rate', {
+                    'rate': vndPerD.toStringAsFixed(0),
+                    'dlt': DFormat.d(AppConstants.dPerDlt),
+                    'min': DFormat.vnd(minTopUp),
+                    'fee': _channelFee('transfer').toStringAsFixed(0),
+                  }),
                   style: GoogleFonts.manrope(color: Brand.muted, fontSize: 13, height: 1.4),
                 ),
                 const SizedBox(height: 12),
                 Wrap(
                   spacing: 8,
+                  runSpacing: 6,
                   children: [
-                    for (final c in const ['transfer', 'card'])
+                    for (final c in const ['transfer', 'paypal'])
                       ChoiceChip(
                         selected: channel == c,
                         onSelected: (_) => setLocal(() => channel = c),
                         label: Text(
-                          '${c == 'transfer' ? 'Bank transfer / VietQR' : 'Card'} · ${_channelFee(c).toStringAsFixed(0)}%',
+                          '${tr(c == 'paypal' ? 'topup.ch.paypal' : 'topup.ch.transfer')} · ${_channelFee(c).toStringAsFixed(0)}%',
                           style: GoogleFonts.manrope(fontSize: 13),
                         ),
                       ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
                 TextField(
                   controller: controller,
                   keyboardType: TextInputType.number,
                   onChanged: (_) => setLocal(() {}),
                   style: GoogleFonts.manrope(color: Brand.text),
                   decoration: InputDecoration(
-                    labelText: 'Amount (VND)',
+                    labelText: tr('topup.amount'),
                     labelStyle: GoogleFonts.manrope(color: Brand.muted),
                     filled: true,
                     fillColor: Brand.inkSoft,
@@ -125,7 +132,7 @@ class _LocalUserProfileScreenState extends State<LocalUserProfileScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'You receive ≈ ${DFormat.full(credited < 0 ? 0 : credited)}',
+                  tr('topup.youGet', {'d': DFormat.full(credited < 0 ? 0 : credited)}),
                   style: GoogleFonts.manrope(color: Brand.sand, fontWeight: FontWeight.w700),
                 ),
               ],
@@ -133,12 +140,12 @@ class _LocalUserProfileScreenState extends State<LocalUserProfileScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child: Text('Cancel', style: GoogleFonts.manrope(color: Brand.muted)),
+                child: Text(tr('topup.cancel'), style: GoogleFonts.manrope(color: Brand.muted)),
               ),
               FilledButton(
                 onPressed: () => Navigator.pop(ctx, true),
                 style: FilledButton.styleFrom(backgroundColor: Brand.sand, foregroundColor: Brand.ink),
-                child: const Text('Create order'),
+                child: Text(tr('topup.create')),
               ),
             ],
           );
@@ -152,39 +159,11 @@ class _LocalUserProfileScreenState extends State<LocalUserProfileScreen> {
 
     final result = await WalletService.createTopUpResult(fiatAmountVnd: amount, channel: channel);
     if (!mounted) return;
-    if (!result.ok) {
-      _toast('Could not create top-up order: ${result.error}');
+    if (!result.ok || result.map == null) {
+      _toast(tr('topup.failed', {'e': result.error ?? ''}));
       return;
     }
-
-    final order = result.map?['order'] as Map<String, dynamic>?;
-    final orderId = order?['id']?.toString() ?? '—';
-    final creditedNum = order?['dCredited'] as num?;
-    final credited = creditedNum != null ? DFormat.full(creditedNum) : '—';
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Brand.panel,
-        title: Text('Order created', style: GoogleFonts.syne(color: Brand.text)),
-        content: Text(
-          'Order ID: $orderId\nYou will receive $credited after fiat is confirmed by ops.\n\nTransfer VND to the Deltanium operating account and send the order ID to support.',
-          style: GoogleFonts.manrope(color: Brand.muted, height: 1.45),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: orderId));
-            },
-            child: Text('Copy order ID', style: GoogleFonts.manrope(color: Brand.sand)),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx),
-            style: FilledButton.styleFrom(backgroundColor: Brand.sand, foregroundColor: Brand.ink),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
+    await showTopUpPaymentDialog(context, result.map!);
     await _loadWallet();
   }
 
@@ -1147,7 +1126,7 @@ class _LocalUserProfileScreenState extends State<LocalUserProfileScreen> {
                       const SizedBox(height: 6),
                       Text(
                         'Service credit: 1 D = 1 VND · 1 DLT = 1.000.000 D, backed 1:1 by VND. '
-                        'Top up from 3% fee (bank transfer).',
+                        'Top up by bank transfer / VietQR (3% fee).',
                         style: GoogleFonts.manrope(color: Brand.muted, fontSize: 12, height: 1.4),
                       ),
                       _usageSummary(),
@@ -1171,6 +1150,14 @@ class _LocalUserProfileScreenState extends State<LocalUserProfileScreen> {
                               side: const BorderSide(color: Brand.line),
                             ),
                             child: const Text('Refresh'),
+                          ),
+                          OutlinedButton(
+                            onPressed: () => showMyTopUps(context),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Brand.text,
+                              side: const BorderSide(color: Brand.line),
+                            ),
+                            child: Text(tr('topup.list.title')),
                           ),
                           OutlinedButton(
                             onPressed: _showPlanDialog,

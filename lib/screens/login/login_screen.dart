@@ -179,18 +179,20 @@ class _LoginScreenState extends State<LoginScreen> {
                                     try {
                                       final keyPair = CryptoService.generateKeyPairFromMnemonic(phrase);
                                       final pubkey = CryptoService.getPublicKeyHex(keyPair);
-                                      final profile = await UserService().getUserProfile(pubkey);
-                                      if (profile == null || (profile.email ?? '').isEmpty) {
+                                      final profile = await UserService().getUserProfile(pubkey, ownerMnemonic: phrase);
+                                      // Holding the phrase is the proof; we only need the profile to exist.
+                                      if (profile == null) {
                                         setDialogState(() {
                                           restoring = false;
                                           localError = tr('restore.notFound');
                                         });
                                         return;
                                       }
-                                      await CryptoService.saveUser(profile.email!, phrase, pubkey);
+                                      final email = profile.email ?? '';
+                                      await CryptoService.saveUser(email, phrase, pubkey, name: profile.fullName);
                                       if (dialogContext.mounted) Navigator.pop(dialogContext);
                                       await _loginWithLocalUser({
-                                        'email': profile.email,
+                                        'email': email,
                                         'mnemonic': phrase,
                                         'pubkey': pubkey,
                                       });
@@ -809,8 +811,14 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _buildLocalUserRow(Map<String, dynamic> user) {
-    final email = user['email'] ?? '';
-    final pubkey = user['pubkey'] ?? '';
+    final email = '${user['email'] ?? ''}';
+    final name = '${user['name'] ?? ''}';
+    final pubkey = '${user['pubkey'] ?? ''}';
+    final label = email.isNotEmpty
+        ? email
+        : name.isNotEmpty
+            ? name
+            : (pubkey.length > 16 ? '${pubkey.substring(0, 10)}…${pubkey.substring(pubkey.length - 6)}' : pubkey);
     return Material(
       color: Brand.inkSoft,
       borderRadius: BorderRadius.circular(Brand.radius + 2),
@@ -832,7 +840,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      email,
+                      label,
                       style: GoogleFonts.manrope(fontWeight: FontWeight.w600, color: Brand.text),
                       overflow: TextOverflow.ellipsis,
                     ),
