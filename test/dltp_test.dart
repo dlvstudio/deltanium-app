@@ -235,7 +235,8 @@ class _FakeClient extends http.BaseClient {
 }
 
 List<int> _pemToDer(String pem) => base64.decode(pem
-    .split('\n')
+    .split(RegExp(r'\r?\n'))
+    .map((l) => l.trim())
     .where((l) => l.isNotEmpty && !l.startsWith('-----'))
     .join());
 
