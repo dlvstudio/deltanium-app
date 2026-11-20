@@ -8,6 +8,13 @@ Click **More info** → **Run anyway**.
 The app is not notarized yet. The first time, macOS will refuse to open it. Go to
 **System Settings → Privacy & Security** and click **Open Anyway**.
 
+**New in 1.3.1**
+- Followers posts work end to end: re-encryption keys are signed the way the network expects, and the Following
+  feed decrypts followers posts on your device.
+- Followers and subscribers posts use a separate key per month (PRE v2): a key for one month opens only that
+  month's posts, and people who unfollow get no key for later months.
+- Post publishing rewritten as one service shared by the app and its tests.
+
 **New in 1.3.0**
 - Connects to network nodes over TCP (DLTP) when a node offers it, and falls back to HTTPS.
 - Reaches nodes that run on a home or personal computer with only a public IP address: the app checks
