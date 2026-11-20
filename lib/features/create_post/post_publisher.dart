@@ -8,6 +8,7 @@ import 'package:deltanium_app/services/app_logger.dart';
 import 'package:deltanium_app/services/crypto_service.dart';
 import 'package:deltanium_app/services/post_service.dart';
 import 'package:deltanium_app/services/pre_service.dart';
+import 'package:deltanium_app/services/pre_keys.dart';
 import 'package:deltanium_app/services/request_signer.dart';
 import 'package:deltanium_app/services/storage_contract_service.dart';
 import 'package:deltanium_app/services/store_node_directory.dart';
@@ -167,7 +168,7 @@ class PostPublisher {
         tags: r.tags,
         policyTag: policyTag,
         capsuleFor: policyTag != null ? 'tag' : null,
-        policyScheme: policyTag != null ? 'CPRE' : null,
+        policyScheme: policyTag != null ? PreKeys.schemeFor(policyTag) : null,
         onProgress: onProgress,
       );
 
@@ -293,7 +294,7 @@ class PostPublisher {
       shareType: r.shareType,
       policyTag: r.preTag,
       capsuleFor: r.preTag != null ? 'tag' : null,
-      policyScheme: r.preTag != null ? 'CPRE' : null,
+      policyScheme: r.preTag != null ? PreKeys.schemeFor(r.preTag!) : null,
     );
     if (up['success'] != true) throw Exception('FileUploadService failed: ${up['error']}');
     if (up['blockchainSubmitted'] == false) {

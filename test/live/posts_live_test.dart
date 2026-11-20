@@ -19,6 +19,7 @@ import 'package:deltanium_app/services/dltp/dltp_client_io.dart';
 import 'package:deltanium_app/services/dltp/node_address.dart';
 import 'package:deltanium_app/services/file_crypto_service.dart';
 import 'package:deltanium_app/services/following_feed_service.dart';
+import 'package:deltanium_app/services/pre_keys.dart';
 import 'package:deltanium_app/services/registration_service.dart';
 import 'package:deltanium_app/services/store_node_directory.dart';
 import 'package:deltanium_app/services/user_discovery_service.dart';
@@ -172,7 +173,7 @@ void main() {
   }, skip: !enabled, timeout: const Timeout(Duration(minutes: 8)));
 
   test('a followers post (PRE): the follower reads it, a stranger cannot, nobody can take the follower\'s rekey', () async {
-    final tag = 'followers:${DateTime.now().year}';
+    final tag = PreKeys.followersTag(); // PRE v2: per-tag author key, monthly tag
     await actAs(b);
     await UserDiscoveryService().followUser(a.publicKey); // B follows A (already true on later runs with fixed identities)
 
@@ -188,6 +189,7 @@ void main() {
       rekeyFor: [a.publicKey, b.publicKey],
     ));
     expect(published.rekeys[b.publicKey], isTrue, reason: 'rekey A->B uploaded');
+    expect(published.rekeys[a.publicKey], isTrue, reason: 'the author\'s own rekey A->A is accepted');
 
     // B: the post appears in the Following feed, decrypted through the rekey.
     await actAs(b);
@@ -209,6 +211,12 @@ void main() {
     expect(
       await FileCryptoService.fetchRekeyFromCentral(
           followerPubKey: b.publicKey, followingPubKey: a.publicKey, policyTag: tag, mnemonic: c.mnemonic),
+      isNull,
+    );
+    // B has no key for another month (PRE v2: a key per month).
+    expect(
+      await FileCryptoService.fetchRekeyFromCentral(
+          followerPubKey: b.publicKey, followingPubKey: a.publicKey, policyTag: PreKeys.followersTag(DateTime.utc(2001, 1, 1)), mnemonic: b.mnemonic),
       isNull,
     );
     // B can.

@@ -3,6 +3,7 @@ import 'package:crypto/crypto.dart';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:deltanium_app/services/pre_ffi.dart';
+import 'package:deltanium_app/services/pre_keys.dart';
 import 'package:bip39/bip39.dart' as bip39;
 import 'package:deltanium_app/services/crypto_service.dart';
 
@@ -121,7 +122,7 @@ class PreService {
     }
   }
 
-  /// Build policy tag for current year
+  /// Build a v1 policy tag for a year (old posts). New posts use PreKeys.followersTag().
   String buildPolicyTagForYear([int? year]) {
     final y = year ?? DateTime.now().year;
     return 'followers:$y';
@@ -309,8 +310,8 @@ class PreService {
       await publishTag(apiBaseUrl: apiBaseUrl, authorPubKey: authorPubKey, mnemonic: mnemonic, tag: tag);
 
       // Derive sk_A
-      final seed = bip39.mnemonicToSeed(mnemonic);
-      final skA = await CryptoService.hashSHA256(Uint8List.fromList(seed));
+      // Author key for this tag: per-tag for PRE v2, the wallet key for v1 tags.
+      final skA = PreKeys.authorSecret(mnemonic, tag);
       final pre = PreFfi.instance();
 
       // Ensure author can also access their own PRE posts via proxy transform (rk A->A)

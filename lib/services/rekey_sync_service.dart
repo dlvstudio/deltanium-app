@@ -6,6 +6,7 @@ import 'package:deltanium_app/config/constants.dart';
 import 'package:deltanium_app/services/app_logger.dart';
 import 'package:deltanium_app/services/crypto_service.dart';
 import 'package:deltanium_app/services/pre_ffi.dart';
+import 'package:deltanium_app/services/pre_keys.dart';
 import 'package:deltanium_app/services/wallet_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:bip39/bip39.dart' as bip39;
@@ -24,7 +25,10 @@ class RekeySyncService {
   }) async {
     try {
       AppLogger.log('🔄 REKEY_SYNC: Starting follower sync...');
-      
+
+      // Monthly PRE v2 rotation: everyone who follows now gets this month's followers key (people who left do not).
+      await generateRekeysForTag(mnemonic: mnemonic, userPublicKey: userPublicKey, policyTag: PreKeys.followersTag());
+
       // 1. Get last sync timestamp
       final prefs = await SharedPreferences.getInstance();
       final lastSync = prefs.getInt(_lastSyncKey) ?? 0;
@@ -41,16 +45,16 @@ class RekeySyncService {
       
       AppLogger.log('📋 REKEY_SYNC: Found ${newFollowers.length} new followers');
       
-      // 3. Get current year tag (followers:YYYY)
-      final currentYear = DateTime.now().year;
-      final policyTag = 'followers:$currentYear';
-      
-      // 4. Generate rekeys for each new follower
+      // 3. Tags a new follower gets: PRE v2 followers tags of the last 12 months (recent posts), plus the v1
+      //    yearly tag so old posts stay readable.
+      final tags = [...PreKeys.recentFollowersTags(), 'followers:${DateTime.now().year}'];
+
+      // 4. Generate rekeys for each new follower and tag
       final rekeys = <Map<String, String>>[];
-      
+
       for (final follower in newFollowers) {
         final followerPubKey = follower['followerPubKey'] as String;
-        
+        for (final policyTag in tags) {
         try {
           AppLogger.log('🔑 REKEY_SYNC: Generating rekey for follower: ${followerPubKey.substring(0, 10)}...');
           
@@ -74,7 +78,8 @@ class RekeySyncService {
             AppLogger.log('❌ REKEY_SYNC: Failed to generate rekey for ${followerPubKey.substring(0, 10)}...');
           }
         } catch (e) {
-          AppLogger.log('❌ REKEY_SYNC: Error generating rekey for $followerPubKey: $e');
+          AppLogger.log('❌ REKEY_SYNC: Error generating rekey for $followerPubKey ($policyTag): $e');
+        }
         }
       }
       
@@ -111,7 +116,7 @@ class RekeySyncService {
     required String userPublicKey,
   }) async {
     try {
-      final tag = WalletService.currentSubscriberTag();
+      final tag = PreKeys.subscribersTag(); // PRE v2: a key per month, so a past month's subscriber cannot read later posts
       final prefs = await SharedPreferences.getInstance();
       final doneKey = 'pre_rekey_subscribers_done_$tag';
       final done = (prefs.getStringList(doneKey) ?? const <String>[]).toSet();
@@ -152,9 +157,8 @@ class RekeySyncService {
     try {
       // Get author's private key from mnemonic (32 bytes)
       // Same method as EciesService._getPrivateKeyFromMnemonic
-      final seed = bip39.mnemonicToSeed(mnemonic);
-      final privateKeyBytes = sha256.convert(seed).bytes;
-      final skAuthor = Uint8List.fromList(privateKeyBytes);
+      // Per-tag author key for PRE v2 tags, the wallet key for v1 tags.
+      final skAuthor = PreKeys.authorSecret(mnemonic, policyTag);
       
       // Convert follower public key hex to bytes
       final followerPkBytes = _hexToBytes(followerPubKey);

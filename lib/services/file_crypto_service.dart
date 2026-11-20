@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:deltanium_app/services/crypto_service.dart';
 import 'package:deltanium_app/services/ecies_service.dart';
 import 'package:deltanium_app/services/pre_ffi.dart';
+import 'package:deltanium_app/services/pre_keys.dart';
 import 'package:deltanium_app/config/constants.dart';
 import 'package:http/http.dart' as http;
 import 'package:bip39/bip39.dart' as bip39;
@@ -651,7 +652,8 @@ class FileCryptoService {
     Uint8List? preCapsuleForFollowers;
     if (isPreTag) {
       final pre = PreFfi.instance();
-      final pkAuthorBytes = _hexToBytes(ownerPublicKey);
+      // PRE v2 tags use a per-tag author key (PreKeys); v1 tags the wallet key.
+      final pkAuthorBytes = PreKeys.isV2Tag(policyTag!) ? PreKeys.authorPublic(mnemonic, policyTag) : _hexToBytes(ownerPublicKey);
       AppLogger.log('🔐 PRE: Generating capsule with pkAuthor (${pkAuthorBytes.length} bytes), tag: $policyTag');
       preCapsuleForFollowers = pre.encapsulateWithTag(
         pkAuthor: pkAuthorBytes,

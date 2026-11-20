@@ -25,6 +25,7 @@ import 'package:deltanium_app/l10n/app_lang.dart';
 import 'package:deltanium_app/services/store_node_directory.dart';
 import 'package:deltanium_app/services/pre_ffi.dart';
 import 'package:deltanium_app/features/create_post/post_publisher.dart';
+import 'package:deltanium_app/services/pre_keys.dart';
 
 // import 'package:deltanium_app/services/user_discovery_service.dart';
 
@@ -66,9 +67,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   bool _followersUsePre = true;
   // TOKENOMICS_V2 §9: subscribers-only posts use the `subscribers:YYYY-MM` PRE tag.
   bool _subscribersOnly = false;
-  String get _preTag => _subscribersOnly
-      ? WalletService.currentSubscriberTag()
-      : 'followers:${DateTime.now().year}';
+  // PRE v2 (per-tag author keys, monthly tags): see PreKeys.
+  String get _preTag => _subscribersOnly ? PreKeys.subscribersTag() : PreKeys.followersTag();
   
   List<String> _followers = [];
   bool _isLoadingFollowers = false;
@@ -1115,7 +1115,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             value: _subscribersOnly,
             onChanged: (v) => setState(() => _subscribersOnly = v ?? false),
             title: Text(tr('share.subscribersOnly')),
-            subtitle: Text(tr('share.subscribersOnlyNote', {'tag': WalletService.currentSubscriberTag()})),
+            subtitle: Text(tr('share.subscribersOnlyNote', {'tag': PreKeys.subscribersTag()})),
           ),
         if (_shareType == 'followers' && _isLoadingFollowers)
           Padding(

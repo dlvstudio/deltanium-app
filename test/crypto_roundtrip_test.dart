@@ -12,6 +12,7 @@ import 'package:crypto/crypto.dart' as crypto;
 import 'package:deltanium_app/services/crypto_service.dart';
 import 'package:deltanium_app/services/file_crypto_service.dart';
 import 'package:deltanium_app/services/pre_ffi.dart';
+import 'package:deltanium_app/services/pre_keys.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -141,9 +142,8 @@ void main() {
       }, throwsA(anything));
     });
 
-    // KNOWN GAP: native/umbral_pre ignores the tag in all three calls, so any rekey A->B opens every PRE post
-    // of A whatever its tag (followers / subscribers month). Access is enforced only by who Central gives
-    // rekeys to. Kept as a skipped test until per-tag author keys are introduced.
+    // v1 (CPRE) posts: native/umbral_pre ignores the tag, so a v1 rekey A->B opens every v1 PRE post of A whatever
+    // its tag. Fixed for new posts by PRE v2 (per-tag author keys, test below); this documents the v1 behaviour.
     test('a rekey for another tag does not open this post', () {
       final pre = PreFfi.instance();
       final postKey = _randomBytes(32, 9);
@@ -154,7 +154,27 @@ void main() {
         final k = pre.decapsulateForRecipient(encapsulatedForRecipient: forB, skRecipient: b.preSecret, tag: tag);
         if (k.isEmpty || !_same(k, postKey)) throw StateError('no key');
       }, throwsA(anything));
-    }, skip: 'known gap: the Umbral wrapper does not bind the tag (see comment above)');
+    }, skip: 'v1 only: the Umbral wrapper does not bind the tag; PRE v2 does (see next tests)');
+
+    test('PRE v2: a rekey for one month does not open another month (per-tag author keys)', () {
+      final pre = PreFfi.instance();
+      final postKey = _randomBytes(32, 17);
+      const nov = 'subscribers-v2:2026-11', dec = 'subscribers-v2:2026-12';
+      final capsule = pre.encapsulateWithTag(pkAuthor: PreKeys.authorPublic(a.mnemonic, dec), tag: dec, key: postKey);
+
+      // A December subscriber (rekey made with the December key) reads the December post.
+      final rkDec = pre.generateRekey(skAuthor: PreKeys.authorSecret(a.mnemonic, dec), pkRecipient: b.publicKeyBytes, tag: dec);
+      final okForB = pre.reencrypt(encapsulatedForAuthor: capsule, rekey: rkDec);
+      expect(pre.decapsulateForRecipient(encapsulatedForRecipient: okForB, skRecipient: b.preSecret, tag: dec), postKey);
+
+      // A November subscriber does not.
+      final rkNov = pre.generateRekey(skAuthor: PreKeys.authorSecret(a.mnemonic, nov), pkRecipient: c.publicKeyBytes, tag: nov);
+      expect(() {
+        final forC = pre.reencrypt(encapsulatedForAuthor: capsule, rekey: rkNov);
+        final k = pre.decapsulateForRecipient(encapsulatedForRecipient: forC, skRecipient: c.preSecret, tag: dec);
+        if (k.isEmpty || !_same(k, postKey)) throw StateError('no key');
+      }, throwsA(anything));
+    });
 
     test('the author reads their own followers post through rk A->A', () {
       final pre = PreFfi.instance();
