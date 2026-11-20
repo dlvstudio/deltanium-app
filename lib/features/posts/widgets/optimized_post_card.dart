@@ -7,6 +7,7 @@ import 'package:deltanium_app/features/posts/widgets/post_comments_section.dart'
 import 'package:deltanium_app/features/posts/widgets/post_reactions_bar.dart';
 import 'package:deltanium_app/services/crypto_service.dart';
 import 'package:flutter/material.dart';
+import 'package:deltanium_app/utils/author_label.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -308,25 +309,8 @@ class OptimizedPostCard extends StatelessWidget {
     );
   }
 
-  String _displayAuthorName(PostMetadata post) {
-    // Prefer explicit authorName from decrypted content if available
-    if (post.authorName != null && post.authorName!.trim().isNotEmpty) {
-      return post.authorName!;
-    }
-    // Fall back: Show 'You' for owner, otherwise short owner key
-    try {
-      if (post.ownerPubKey != null && userPublicKey != null) {
-        final owner = CryptoService.normalizePublicKey(post.ownerPubKey!);
-        final current = CryptoService.normalizePublicKey(userPublicKey!);
-        if (owner == current) return 'You';
-        // Show shortened owner key as fallback
-        return owner.substring(0, 8) +
-            '...' +
-            owner.substring(owner.length - 6);
-      }
-    } catch (_) {}
-    return 'You';
-  }
+  String _displayAuthorName(PostMetadata post) =>
+      authorLabel(post.ownerPubKey ?? userPublicKey, userPublicKey, name: post.authorName);
 
   Widget _buildPostAction(IconData icon, String count, bool isDarkMode) {
     return Row(

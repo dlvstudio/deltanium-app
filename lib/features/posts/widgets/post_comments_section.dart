@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:deltanium_app/utils/author_label.dart';
 import 'package:deltanium_app/config/theme.dart';
 import 'package:deltanium_app/features/posts/screens/my_posts_screen.dart';
 import 'package:deltanium_app/services/comment_service.dart';
@@ -996,7 +997,8 @@ class _PostCommentsSectionState extends State<PostCommentsSection> {
                       children: [
                         Expanded(
                           child: Text(
-                      commenterPubKey?.substring(0, 10) ?? 'Unknown',
+                      authorLabel(commenterPubKey, widget.userPublicKey,
+                          name: (comment['authorName'] ?? comment['commenterName'])?.toString()),
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
                         fontSize: 14,

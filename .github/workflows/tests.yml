@@ -1,0 +1,17 @@
+# Runs the Flutter tests on the public GitHub mirror (manually or on pushes to branches named test/*).
+name: Tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['test/**']
+
+jobs:
+  flutter-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable, cache: true }
+      - run: flutter pub get
+      - run: flutter test --reporter expanded

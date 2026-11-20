@@ -21,6 +21,7 @@ import 'package:deltanium_app/services/wallet_service.dart';
 import 'package:deltanium_app/widgets/confirm_storage_cost_dialog.dart';
 import 'package:deltanium_app/services/storage_contract_service.dart';
 import 'package:deltanium_app/services/request_signer.dart';
+import 'package:deltanium_app/l10n/app_lang.dart';
 import 'package:deltanium_app/services/store_node_directory.dart';
 import 'package:deltanium_app/services/pre_ffi.dart';
 
@@ -1992,9 +1993,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Chia sẻ với:', style: TextStyle(fontWeight: FontWeight.bold)),
-        Row(
+        Text(tr('share.with'), style: const TextStyle(fontWeight: FontWeight.bold)),
+        Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
+            // Each choice keeps its radio and label together when the row wraps on a narrow screen.
+            Row(mainAxisSize: MainAxisSize.min, children: [
             Radio<String>(
               value: 'me',
               groupValue: _shareType,
@@ -2005,7 +2009,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 });
               },
             ),
-            const Text('Chỉ mình tôi'),
+            Text(tr('share.me')),
+            ]),
+            Row(mainAxisSize: MainAxisSize.min, children: [
             Radio<String>(
               value: 'followers',
               groupValue: _shareType,
@@ -2030,11 +2036,13 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     },
             ),
             Text(
-              'Follower',
+              tr('share.followers'),
               style: TextStyle(
                 color: PreFfi.isSupported ? null : Colors.grey,
               ),
             ),
+            ]),
+            Row(mainAxisSize: MainAxisSize.min, children: [
             Radio<String>(
               value: 'public',
               groupValue: _shareType,
@@ -2046,15 +2054,16 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 });
               },
             ),
-            const Text('Public'),
+            Text(tr('share.public')),
+            ]),
           ],
         ),
         if (!PreFfi.isSupported)
-          const Padding(
-            padding: EdgeInsets.only(left: 8.0, top: 4, bottom: 4),
+          Padding(
+            padding: const EdgeInsets.only(left: 8.0, top: 4, bottom: 4),
             child: Text(
-              'Tạm thời chưa tạo được bài Followers trên web (cần Umbral PRE). Dùng Public / Chỉ mình tôi, hoặc app native.',
-              style: TextStyle(color: Colors.orange, fontSize: 13),
+              tr('share.followersWebNote'),
+              style: const TextStyle(color: Colors.orange, fontSize: 13),
             ),
           ),
         if (_shareType == 'followers' && PreFfi.isSupported)
@@ -2063,8 +2072,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             contentPadding: const EdgeInsets.only(left: 8),
             value: _subscribersOnly,
             onChanged: (v) => setState(() => _subscribersOnly = v ?? false),
-            title: const Text('Chỉ người đăng ký (subscribers)'),
-            subtitle: Text('Tag ${WalletService.currentSubscriberTag()} — chỉ người đã trả phí tháng này đọc được'),
+            title: Text(tr('share.subscribersOnly')),
+            subtitle: Text(tr('share.subscribersOnlyNote', {'tag': WalletService.currentSubscriberTag()})),
           ),
         if (_shareType == 'followers' && _isLoadingFollowers)
           Padding(
@@ -2073,7 +2082,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               children: [
                 SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
                 SizedBox(width: 8),
-                Text('Đang tải danh sách follower...'),
+                Text(tr('share.loadingFollowers')),
               ],
             ),
           ),
@@ -2081,11 +2090,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           Padding(
             padding: const EdgeInsets.only(left: 16.0, top: 4, bottom: 4),
             child: _followers.isEmpty
-                ? Text('Bạn chưa có follower nào. Chỉ những người đang theo dõi bạn tại thời điểm đăng bài mới xem được bài này.', style: TextStyle(color: Colors.orange, fontSize: 13))
+                ? Text(tr('share.noFollowers'), style: const TextStyle(color: Colors.orange, fontSize: 13))
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Số follower: ${_followers.length}', style: TextStyle(fontWeight: FontWeight.w500)),
+                      Text(tr('share.followerCount', {'n': '${_followers.length}'}), style: const TextStyle(fontWeight: FontWeight.w500)),
                       const SizedBox(height: 6),
                       ..._followers.take(5).map((pubkey) => Row(
                         children: [
@@ -2097,7 +2106,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                       if (_followers.length > 5)
                         Padding(
                           padding: const EdgeInsets.only(top: 2),
-                          child: Text('+${_followers.length - 5} follower khác...', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                          child: Text(tr('share.moreFollowers', {'n': '${_followers.length - 5}'}), style: const TextStyle(fontSize: 11, color: Colors.grey)),
                         ),
                     ],
                   ),

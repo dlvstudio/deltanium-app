@@ -7,6 +7,11 @@
 /// URL (stored links stay readable on the web) and falls back to HTTPS when
 /// DLTP fails. A TCP-only node gets the base URL `https://host:port`, which
 /// only the routing client can reach; the web build skips such nodes.
+///
+/// A DLTP endpoint names a host (`tcps://store.example.com:7333`, TLS checked against the public CA like
+/// HTTPS) or a public IP (`tcps://203.0.113.7:7333`, a node on a home or personal computer with no domain).
+/// For an IP the node proves itself with its registered key instead (see `node_proof.dart`), so [of]
+/// needs the node's public key.
 class NodeAddress {
   NodeAddress._();
 
@@ -28,14 +33,24 @@ class NodeAddress {
   }
 
   /// Base URL the app should use for a node, or '' when this build cannot reach it.
-  static String of(String? https, String? tcp) {
+  static String of(String? https, String? tcp, {String? publicKey}) {
     final h = (https ?? '').trim().replaceAll(RegExp(r'/+$'), '');
     final t = enabled ? parseTcp(tcp) : null;
     if (t == null) return h;
-    final base = h.isNotEmpty ? h : 'https://${t.host}:${t.port}';
-    _routes[_key(Uri.parse(base))] = DltpRoute(t, hasHttps: h.isNotEmpty);
+    final key = (publicKey ?? '').trim();
+    final route = DltpRoute(t, hasHttps: h.isNotEmpty, nodePublicKey: key.isEmpty ? null : key);
+    // An IP endpoint without a key to check it against cannot be trusted: use HTTPS only.
+    if (route.keyMode && route.nodePublicKey == null) return h;
+    final base = h.isNotEmpty ? h : 'https://${_hostForUrl(t.host)}:${t.port}';
+    _routes[_key(Uri.parse(base))] = route;
     return base;
   }
+
+  /// True for an IPv4 or IPv6 literal (a node without a domain).
+  static bool isIpLiteral(String host) =>
+      RegExp(r'^\d{1,3}(\.\d{1,3}){3}$').hasMatch(host) || host.contains(':');
+
+  static String _hostForUrl(String host) => host.contains(':') ? '[$host]' : host;
 
   /// The DLTP route for a request URL, if its node publishes one.
   static DltpRoute? routeFor(Uri url) => _routes[_key(url)];
@@ -51,8 +66,15 @@ class DltpRoute {
   /// The node also has an HTTPS endpoint, so a failed DLTP call may retry there.
   final bool hasHttps;
 
-  const DltpRoute(this.tcp, {required this.hasHttps});
+  /// The node's registered public key (hex), checked on IP endpoints.
+  final String? nodePublicKey;
+
+  const DltpRoute(this.tcp, {required this.hasHttps, this.nodePublicKey});
 
   bool get tls => tcp.scheme == 'tcps';
-  String get authority => '${tcp.host}:${tcp.port}';
+
+  /// IP endpoints authenticate with the node key instead of a CA certificate.
+  bool get keyMode => tls && NodeAddress.isIpLiteral(tcp.host);
+
+  String get authority => '${NodeAddress._hostForUrl(tcp.host)}:${tcp.port}';
 }

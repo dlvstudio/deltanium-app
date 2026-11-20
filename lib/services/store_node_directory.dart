@@ -42,7 +42,8 @@ class StoreNodeDirectory {
       (node['endpoint'] ?? node['Endpoint'] ?? '').toString(),
     );
     final tcp = (node['tcpEndpoint'] ?? node['TcpEndpoint'])?.toString();
-    final endpoint = NodeAddress.of(https, tcp);
+    final endpoint = NodeAddress.of(https, tcp,
+        publicKey: (node['publicKey'] ?? node['PublicKey'])?.toString());
     final id = (node['id'] ?? node['Id'] ?? node['publicKey'] ?? node['PublicKey'] ?? 'node-$index')
         .toString();
     return {
