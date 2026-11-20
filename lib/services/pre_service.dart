@@ -77,7 +77,8 @@ class PreService {
       final path = '/api/file/pre/reencrypt';
       final ts = (DateTime.now().millisecondsSinceEpoch / 1000).floor().toString();
       final body = json.encode({'fileId': fileId, 'policyTag': policyTag, 'token': token});
-      final bodyHash = base64Encode(utf8.encode(body));
+      // Store signs METHOD + path + timestamp + base64(sha256(body)) (SignatureVerificationMiddleware).
+      final bodyHash = base64Encode(sha256.convert(utf8.encode(body)).bytes);
       final dataToSign = '$method$path$ts$bodyHash';
       final signature = await CryptoService.sign(dataToSign, mnemonic);
 
@@ -229,7 +230,8 @@ class PreService {
       final pathForSign = '/api/policy/publish-tag';
       final ts = (DateTime.now().millisecondsSinceEpoch / 1000).floor().toString();
       final bodyJson = json.encode({'tag': tag, 'policyScheme': policyScheme, 'authorPubKey': authorPubKey});
-      final bodyHash = base64Encode(utf8.encode(bodyJson));
+      // Central signs METHOD + path + timestamp + sha256hex(body) (SignatureAuthHelper.BuildSignedMessage).
+      final bodyHash = sha256.convert(utf8.encode(bodyJson)).toString();
       final signature = await CryptoService.sign('$method$pathForSign$ts$bodyHash', mnemonic);
       final resp = await http.post(
         Uri.parse('$apiBaseUrl$pathForUrl'),
@@ -272,7 +274,8 @@ class PreService {
         if (fileId != null) 'fileId': fileId,
       };
       final bodyJson = json.encode(payload);
-      final bodyHash = base64Encode(utf8.encode(bodyJson));
+      // Central signs METHOD + path + timestamp + sha256hex(body) (SignatureAuthHelper.BuildSignedMessage).
+      final bodyHash = sha256.convert(utf8.encode(bodyJson)).toString();
       final signature = await CryptoService.sign('$method$pathForSign$ts$bodyHash', mnemonic);
       final resp = await http.post(
         Uri.parse('$apiBaseUrl$pathForUrl'),

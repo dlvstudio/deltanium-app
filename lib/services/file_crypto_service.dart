@@ -1173,6 +1173,16 @@ class FileCryptoService {
     return result;
   }
 
+  /// The re-encryption key Central holds for [followerPubKey] reading [followingPubKey]'s posts under [policyTag]
+  /// (proof of possession signed with the follower's key), or null when there is none for them.
+  static Future<String?> fetchRekeyFromCentral({
+    required String followerPubKey,
+    required String followingPubKey,
+    required String policyTag,
+    required String mnemonic,
+  }) =>
+      _fetchRekeyFromCentral(followerPubKey: followerPubKey, followingPubKey: followingPubKey, policyTag: policyTag, mnemonic: mnemonic);
+
   static Future<String?> _fetchRekeyFromCentral({
     required String followerPubKey,
     required String followingPubKey,

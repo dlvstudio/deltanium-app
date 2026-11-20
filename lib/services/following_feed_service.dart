@@ -6,6 +6,7 @@ import 'package:deltanium_app/services/crypto_service.dart';
 import 'package:deltanium_app/models/user_discovery.dart';
 import 'package:deltanium_app/services/file_crypto_service.dart';
 import 'package:deltanium_app/services/pre_service.dart';
+import 'package:deltanium_app/services/pre_ffi.dart';
 import 'package:deltanium_app/features/posts/screens/my_posts_screen.dart';
 import 'package:deltanium_app/config/constants.dart';
 import 'package:deltanium_app/services/app_logger.dart';
@@ -333,39 +334,36 @@ class FollowingFeedService {
       if (capsuleFor == 'tag' && policyTag is String && policyTag.isNotEmpty) {
         try {
           final pre = PreService();
-          // 1) Get transform token (proxy mode)
-          final token = await pre.fetchTransformToken(
-            _apiBaseUrl,
-            CryptoService.normalizePublicKey(currentUserPubKey),
-            // Must pass the author's key (owner/author), not recipient
-            authorInfo.publicKey,
-            policyTag,
-            mnemonic,
-            fileId: fileId,
+          // Client mode: Central gives this follower the rekey A->me (proof of possession), the app transforms the
+          // post's PRE capsule locally and decapsulates it. (The Store proxy re-encrypt path is not used.)
+          final capsuleB64 = (postFile['encapsulatedForRecipient'] ?? postFile['EncapsulatedForRecipient']) as String?;
+          if (capsuleB64 == null || capsuleB64.isEmpty) {
+            AppLogger.log('❌ PRE: post has no capsule for followers');
+            return null;
+          }
+          final rkB64 = await FileCryptoService.fetchRekeyFromCentral(
+            followerPubKey: CryptoService.normalizePublicKey(currentUserPubKey),
+            followingPubKey: authorInfo.publicKey,
+            policyTag: policyTag,
+            mnemonic: mnemonic,
           );
-          if (token == null || token.isEmpty) {
-            AppLogger.log('❌ PRE: Failed to obtain transform token');
+          if (rkB64 == null || rkB64.isEmpty) {
+            AppLogger.log('❌ PRE: no rekey for this follower');
+            return null;
+          }
+          final reencBundle = PreFfi.instance().reencrypt(
+            encapsulatedForAuthor: base64Decode(capsuleB64),
+            rekey: base64Decode(rkB64),
+          );
+          if (reencBundle.isEmpty) {
+            AppLogger.log('❌ PRE: transform failed');
             return null;
           }
 
-          // 2) Ask Store to re-encrypt bundle for B
-          final reencBundle = await pre.requestProxyReencrypt(
-            nodeEndpoint,
-            fileId,
-            policyTag,
-            token,
-            CryptoService.normalizePublicKey(currentUserPubKey),
-            mnemonic,
-          );
-          if (reencBundle == null) {
-            AppLogger.log('❌ PRE: Store re-encrypt returned null');
-            return null;
-          }
-
-          // 3) Decapsulate on client to recover K (not yet implemented in Flutter)
+          // Decapsulate with this follower's key to recover K
           final symmetricKey = await pre.decapsulateAndRecoverKey(reencBundle, mnemonic, policyTag: policyTag);
           if (symmetricKey == null || symmetricKey.isEmpty) {
-            AppLogger.log('❌ PRE: Decapsulation not available in Flutter yet');
+            AppLogger.log('❌ PRE: decapsulation failed');
             return null;
           }
 

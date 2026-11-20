@@ -1,19 +1,52 @@
-# Live DLTP checks of the app against the real testnet nodes (read-only). Run from the Actions tab.
+# Live checks of the app against the real testnet: DLTP to every node (read-only), and posting with attachments and
+# followers posts (Umbral PRE) with throwaway QA identities. Run from the Actions tab, or push a branch named live/*.
 name: Live testnet
 
 on:
   workflow_dispatch:
+    inputs:
+      register:
+        description: 'Set to 1 once to register the fixed QA identities on testnet'
+        required: false
+        default: '0'
   push:
     branches: ['live/**']
 
 jobs:
   live:
     runs-on: ubuntu-latest
+    env:
+      UMBRAL_REF: 6f692dd5f2944889c45185875545a0159ea7b735
     steps:
       - uses: actions/checkout@v4
+        with: { path: app }
+      - uses: actions/checkout@v4
+        with: { repository: dlvstudio/deltanium-core, path: core }
+      - uses: actions/checkout@v4
+        with: { repository: nucypher/rust-umbral, ref: '${{ env.UMBRAL_REF }}', path: core/.vendor/rust-umbral }
+      - name: Build libumbral_pre.so
+        working-directory: core/native/umbral_pre
+        run: cargo build --release
       - uses: subosito/flutter-action@v2
         with: { channel: stable, cache: true }
-      - run: flutter pub get
-      - run: flutter test test/live --reporter expanded --dart-define=NETWORK_ID=deltanium-test --dart-define=CENTRAL_API_BASE=https://testnet-api.deltanium.com/api
+      - name: Build webcrypto for tests
+        working-directory: app
+        run: |
+          flutter pub get
+          flutter pub run webcrypto:setup
+      - name: Live tests
+        working-directory: app
         env:
           LIVE_TESTNET: '1'
+          DELTANIUM_NATIVE_CRYPTO: '1'
+          DELTANIUM_UMBRAL: '1'
+          # Fixed testnet QA identities (repository secrets); set QA_REGISTER=1 in a one-off run to register them.
+          QA_MNEMONIC_A: ${{ secrets.QA_MNEMONIC_A }}
+          QA_MNEMONIC_B: ${{ secrets.QA_MNEMONIC_B }}
+          QA_MNEMONIC_C: ${{ secrets.QA_MNEMONIC_C }}
+          QA_REGISTER: ${{ github.event.inputs.register }}
+        run: |
+          export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/core/native/umbral_pre/target/release:$LD_LIBRARY_PATH"
+          flutter test test/live --reporter expanded --concurrency=1 \
+            --dart-define=NETWORK_ID=deltanium-test \
+            --dart-define=CENTRAL_API_BASE=https://testnet-api.deltanium.com/api

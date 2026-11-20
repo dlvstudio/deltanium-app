@@ -14,6 +14,7 @@ import 'package:deltanium_app/config/constants.dart';
 import 'package:deltanium_app/services/app_logger.dart';
 import 'package:deltanium_app/services/rekey_sync_service.dart';
 import 'package:deltanium_app/services/auth_service.dart';
+import 'package:deltanium_app/services/registration_service.dart';
 
 
 class LoginScreen extends StatefulWidget {
@@ -340,91 +341,23 @@ class _LoginScreenState extends State<LoginScreen> {
       });
 
       try {
-        // 🔧 CLIENT-SIDE KEY GENERATION - Generate mnemonic and key pair locally
-        AppLogger.log('Generating keys client-side...');
-        final mnemonic = bip39.generateMnemonic();
-        final keyPair = CryptoService.generateKeyPairFromMnemonic(mnemonic);
-        final publicKeyHex = CryptoService.getPublicKeyHex(keyPair);
-        
-        AppLogger.log('Generated mnemonic: ${mnemonic.substring(0, 20)}...');
-        AppLogger.log('Generated public key: ${publicKeyHex.substring(0, 20)}...');
-
-        // Generate timestamp for signature
-        final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000);
-        AppLogger.log('Generated timestamp: $timestamp');
-
-        // Create signable data with timestamp
-        final request = SignedRegisterRequest(
-          publicKey: publicKeyHex,
-          email: _emailController.text.trim(),
-          fullName: _fullNameController.text.trim(),
+        // Keys are generated on this device; Central only receives the public key and profile.
+        final identity = await RegistrationService.register(
+          email: _emailController.text,
+          fullName: _fullNameController.text,
           dateOfBirth: _selectedDateOfBirth,
-          bio: _bioController.text.trim(),
-          signature: '',  // Will be set after signing
-          timestamp: timestamp,
+          bio: _bioController.text,
         );
-        // DEBUG: show components for server verification
-        final dbgDob = _selectedDateOfBirth != null
-            ? '${_selectedDateOfBirth!.year.toString().padLeft(4, '0')}-${_selectedDateOfBirth!.month.toString().padLeft(2, '0')}-${_selectedDateOfBirth!.day.toString().padLeft(2, '0')}'
-            : '';
-        AppLogger.log('[REGISTER] email=${request.email}, fullName=${request.fullName}, dob=${dbgDob}, ts=${timestamp}');
-
-        // Sign the data using client-generated keys (includes timestamp)
-        final signable = request.getSignableData();
-        AppLogger.log('[REGISTER] signableData (client): ' + signable);
-        final signature = await CryptoService.sign(
-          signable,
-          kIsWeb ? mnemonic : keyPair,
-        );
-        AppLogger.log('Generated signature (base64, len=' + signature.length.toString() + '): ' + (signature.length > 32 ? signature.substring(0, 32) + '...' : signature));
-
-        // Create final request with signature
-        final signedRequest = SignedRegisterRequest(
-          publicKey: publicKeyHex,
-          email: request.email,
-          fullName: request.fullName,
-          dateOfBirth: request.dateOfBirth,
-          bio: request.bio,
-          signature: signature,
-          timestamp: timestamp,
-        );
-
-        // Send registration request
-        final url = AppConstants.apiBaseUrl + '/user/register';
-        final bodyJson = json.encode(signedRequest.toJson());
-        AppLogger.log('[REGISTER] POST ' + url);
-        AppLogger.log('[REGISTER] Body JSON: ' + (bodyJson.length > 300 ? bodyJson.substring(0, 300) + '...' : bodyJson));
-        final response = await http
-            .post(
-              Uri.parse(url),
-              headers: {'Content-Type': 'application/json'},
-              body: bodyJson,
-            )
-            .timeout(const Duration(seconds: 20));
-        AppLogger.log('[REGISTER] Response status: ${response.statusCode}');
-        AppLogger.log('[REGISTER] Response body  : ${response.body}');
-
-        if (response.statusCode == 200) {
-          setState(() {
-            _mnemonic = mnemonic;
-            _publicKey = publicKeyHex;
-            _isRegistering = false;
-          });
-          AppLogger.log('Registration successful! Keys generated client-side.');
-        } else {
-          final raw = response.body;
-          String message;
-          try {
-            final errorData = json.decode(raw);
-            message = errorData['message']?.toString() ?? raw;
-          } catch (_) {
-            message = raw.isEmpty ? 'Registration failed. Please try again.' : raw;
-          }
-          setState(() {
-            _registerErrorMessage = message;
-            _isRegistering = false;
-          });
-        }
+        setState(() {
+          _mnemonic = identity.mnemonic;
+          _publicKey = identity.publicKey;
+          _isRegistering = false;
+        });
+      } on RegistrationException catch (e) {
+        setState(() {
+          _registerErrorMessage = e.message;
+          _isRegistering = false;
+        });
       } catch (e) {
         AppLogger.log('Registration error: $e');
         setState(() {

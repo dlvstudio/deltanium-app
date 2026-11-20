@@ -228,7 +228,7 @@ class MyPostsScreen extends StatefulWidget {
       AppLogger.log('  capsuleFor: ${post.capsuleFor}');
       AppLogger.log('  policyTag: ${post.policyTag}');
       AppLogger.log('  nodeEndpoint: $nodeEndpoint');
-      AppLogger.log('  mnemonic: ${mnemonic.substring(0, 8)}...');
+      AppLogger.log('  mnemonic: (set)');
       
       final encryptedKey = post.encryptedKey;
       final isPublicPost = encryptedKey == null || encryptedKey.isEmpty;

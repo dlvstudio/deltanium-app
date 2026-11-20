@@ -24,6 +24,7 @@ import 'package:deltanium_app/services/request_signer.dart';
 import 'package:deltanium_app/l10n/app_lang.dart';
 import 'package:deltanium_app/services/store_node_directory.dart';
 import 'package:deltanium_app/services/pre_ffi.dart';
+import 'package:deltanium_app/features/create_post/post_publisher.dart';
 
 // import 'package:deltanium_app/services/user_discovery_service.dart';
 
@@ -409,47 +410,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     return completer.future;
   }
 
-  Future<void> _signStorageContract({
-    required String storeBaseUrl,
-    required String contractId,
-  }) async {
-    if (_userPublicKey == null || _userMnemonic == null) {
-      throw Exception('Missing user credentials for contract signing');
-    }
-    final signer = RequestSigner(
-      publicKey: _userPublicKey!,
-      mnemonic: _userMnemonic!,
-    );
-    final contractService = StorageContractService(
-      storeBaseUrl: storeBaseUrl,
-      signer: signer,
-    );
-    final contract = await contractService.getContract(
-      contractId: contractId,
-      userPublicKey: _userPublicKey!,
-    );
-    if (contract == null) {
-      throw Exception('Storage contract not found');
-    }
-    final signed = await contractService.approveAndSignContract(
-      contract: contract,
-      appPrivateKey: _userMnemonic!,
-    );
-    if (signed == null || signed.status.toLowerCase() != 'active') {
-      throw Exception('Failed to sign storage contract');
-    }
-  }
-  
   Future<void> _createPost() async {
     final userProfile = widget.userProfile;
-    String? createdPostId;
-    // Set while the post is paid for but not fully uploaded: a failure then cancels the escrow.
-    String? paidUnuploadedFileId;
-    String? createdFileId;
-    String? createdNodeId;
-    String? createdShareType;
-    String? createdEncryptedType;
-    AppLogger.log('DEBUG: _shareType at start of _createPost: $_shareType pre=$_followersUsePre');
     if (_shareType == 'followers' && !PreFfi.isSupported) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -459,19 +421,13 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       );
       return;
     }
-    // Validate if there's content to post
     if (_textController.text.trim().isEmpty && _selectedMedia.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Your post cannot be empty'),
-          backgroundColor: DeltaniumTheme.errorColor,
-        ),
+        const SnackBar(content: Text('Your post cannot be empty'), backgroundColor: DeltaniumTheme.errorColor),
       );
       return;
     }
-    
-    // Check if user public key is available
-    if (_userPublicKey == null) {
+    if (_userPublicKey == null || _userMnemonic == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Unable to create post: User authentication missing'),
@@ -480,1002 +436,88 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       );
       return;
     }
-    
-    setState(() {
-      _isLoading = true;
-    });
-    
+
+    setState(() => _isLoading = true);
     try {
-      AppLogger.log('DEBUG: Starting create post process');
-      AppLogger.log('Creating post with text: \\${_textController.text}');
-      AppLogger.log('With media: \\${_selectedMedia.length} items');
-      
-      // ==== SỬA ĐOẠN NÀY: Luôn xác định allRecipients đúng theo _shareType ====
-      final bool usePre = _shareType == 'followers' && _followersUsePre;
-      final List<String> allRecipients = _shareType == 'followers'
-          ? (usePre
-              // Option 2 (PRE): do NOT clone per follower; only owner entry
-              ? [_userPublicKey!]
-              // Option 1 (per-recipient): clone to each follower
-              : [_userPublicKey!, ..._followers.where((f) => f != _userPublicKey)])
-          : _shareType == 'public'
-              ? [_userPublicKey!]
-              : [_userPublicKey!]; // "me" thì chỉ mình
-      AppLogger.log('DEBUG: _shareType at start of _createPost: \\$_shareType');
-      AppLogger.log('DEBUG: allRecipients:');
-      for (var f in allRecipients) {
-        AppLogger.log('  Recipient: ' + f);
+      final me = _userPublicKey!;
+      final usePre = _shareType == 'followers' && _followersUsePre;
+      // PRE: one metadata entry for the author, followers get re-encryption keys. Without PRE: one per follower.
+      final recipients = _shareType == 'followers' && !usePre
+          ? [me, ..._followers.where((f) => f != me)]
+          : [me];
+      // Re-encryption keys include the author (rk A->A) so the author also reads PRE posts in Following.
+      final rekeyFor = !usePre
+          ? <String>[]
+          : <String>{me, ...(_subscribersOnly ? await WalletService.getSubscribers() : _followers)}.toList();
+
+      final media = <PostMediaInput>[];
+      for (final m in _selectedMedia) {
+        final Uint8List bytes;
+        if (kIsWeb && m.containsKey('bytes')) {
+          bytes = Uint8List.fromList(m['bytes'] as List<int>);
+        } else if (!kIsWeb && m.containsKey('path')) {
+          bytes = await File(m['path'] as String).readAsBytes();
+        } else {
+          AppLogger.log('Skipping attachment without bytes: ${m['name']}');
+          continue;
+        }
+        media.add(PostMediaInput(
+          bytes: bytes,
+          name: (m['name'] as String?) ?? 'file.dat',
+          type: (m['type'] as String?) ?? 'file',
+          extension: (m['extension'] as String?) ?? 'unknown',
+        ));
       }
-      // ===============================================================
-      
-      if (_selectedMedia.isNotEmpty) {
-        // 1. Get available store nodes
-        AppLogger.log('DEBUG: Fetching available store nodes...');
-        final storeNodes = await _fetchStoreNodes();
-        AppLogger.log('DEBUG: Received ${storeNodes.length} store nodes');
-        
-        if (storeNodes.isEmpty) {
-          throw Exception('No available storage nodes found');
-        }
-        
-        AppLogger.log('Found ${storeNodes.length} available store nodes');
-        
-        // 2. Select N-of-M nodes
-        final selectedNodes = _selectNodes(storeNodes);
-        final selectedNode = selectedNodes.first;
-        final replicaNodes = selectedNodes.length > 1 ? selectedNodes.sublist(1) : <Map<String, dynamic>>[];
-        AppLogger.log('Selected ${selectedNodes.length} store node(s); primary=${selectedNode['endpoint']}');
-        
-        // 3. Use the user's public key for authentication instead of node's key
-        AppLogger.log('DEBUG: Setting up authentication with user key...');
-        AppLogger.log('DEBUG: Using user public key: ${_userPublicKey!.substring(0, 10)}...');
-        
-        // 4. Upload media files
-        AppLogger.log('DEBUG: Beginning media upload process...');
-        final uploadedMedia = <Map<String, dynamic>>[];
-        
-        for (final media in _selectedMedia) {
-          try {
-            AppLogger.log('DEBUG: Uploading media item: ${media['name']}');
-            final uploadResult = await _uploadMediaToNode(
-              media: media,
-              node: selectedNode,
-              replicaNodes: replicaNodes,
-              publicKey: _userPublicKey!,
-              mnemonic: _userMnemonic!,
-              onProgress: (message) {
-                setState(() {
-                  _loadingMessage = message;
-                });
-              },
-            );
-            
-            AppLogger.log('DEBUG: Media upload completed. Result: $uploadResult');
-            
-            uploadedMedia.add({
-              'fileId': uploadResult['fileId'],
-              'name': media['name'] ?? 'Unnamed file',
-              'type': media['type'] ?? 'file',
-              'url': '${selectedNode['endpoint']}/api/file/download/${uploadResult['fileId']}',
-              'nodeId': selectedNode['id'],
-              'nodeEndpoint': selectedNode['endpoint'], // Add node endpoint
-              'size': media['size'] ?? 0, // Add file size
-              'extension': media['extension'] ?? 'unknown', // Add file extension
-              'encryptedKey': uploadResult['encryptedKey'], // 🆕 Add encryptedKey from upload result
-            });
-            
-            // Register with central API
-            AppLogger.log('DEBUG: Registering file with central API...');
-            await _registerFileWithAPI(
-              fileId: uploadResult['fileId'],
-              fileName: media['name'] ?? 'Unnamed file',
-              fileType: media['type'] ?? 'file',
-              nodeId: selectedNode['id'],
-              publicKey: _userPublicKey!, // Use user's public key
-            );
-            AppLogger.log('DEBUG: File registered with central API');
-          } catch (e) {
-            AppLogger.log('Error uploading media: $e');
-            // Continue with next file instead of failing entire post
-          }
-        }
-        
-        // 5. Create the post with uploaded media using PostService
-        AppLogger.log('Successfully uploaded ${uploadedMedia.length} files');
-        
-        // Log sharing information
-        if (_sharedWithPublicKeys.isNotEmpty) {
-          AppLogger.log('Files shared with ${_sharedWithPublicKeys.length} additional users');
-          for (int i = 0; i < _sharedWithPublicKeys.length; i++) {
-            AppLogger.log('  Shared with user ${i + 1}: ${_sharedWithPublicKeys[i].substring(0, 10)}...');
-          }
-        }
-        
-        // 🆕 Create post as special file with attached media
-        setState(() {
-          _loadingMessage = 'Creating post...';
-        });
-        
-        // 🔍 DEBUG: Log attached media before creating post
-        AppLogger.log('🔍 DEBUG CREATE POST - attached media:');
-        AppLogger.log('  uploadedMedia length: ${uploadedMedia.length}');
-        AppLogger.log('  uploadedMedia content: $uploadedMedia');
-        if (uploadedMedia.isNotEmpty) {
-          final relatedFilesForPost = uploadedMedia.map((media) => {
-            'fileId': media['fileId'],
-            'type': media['type'],
-            'caption': media['name'],
-            'order': uploadedMedia.indexOf(media),
-          }).toList();
-          AppLogger.log('  relatedFilesForPost: $relatedFilesForPost');
-          AppLogger.log('  relatedFilesForPost length: ${relatedFilesForPost.length}');
-        }
-        AppLogger.log('🔍 END DEBUG CREATE POST');
-        
-        final String? policyTag = (_shareType == 'followers' && _followersUsePre)
-            ? _preTag
-            : null;
-        final postResult = await PostService.createPost(
-          textContent: _textController.text,
-          authorPublicKey: _userPublicKey!,
-          authorName: widget.userProfile?.fullName,
-          mnemonic: _userMnemonic!,
-          attachedMedia: uploadedMedia.isNotEmpty
-              ? uploadedMedia.map((media) => {
-                  'fileId': media['fileId'],
-                  'type': media['type'],
-                  'caption': media['name'],
-                  'order': uploadedMedia.indexOf(media),
-                  'nodeEndpoint': media['nodeEndpoint'], // 🆕 Include nodeEndpoint
-                  'nodeId': media['nodeId'], // 🆕 Include nodeId
-                  'size': media['size'], // 🆕 Include file size
-                  'extension': media['extension'], // 🆕 Include file extension
-                  'encryptedKey': media['encryptedKey'], // 🆕 Include encryptedKey if available
-                }).toList()
-              : null,
-          sharedWithUsers: allRecipients,
-          encryptedType: _encryptedType,
-          shareType: _shareType,
-          tags: _extractTags(_textController.text),
-          // 🆕 PRE fields (Option 2)
-          policyTag: policyTag,
-          capsuleFor: policyTag != null ? 'tag' : null,
-          policyScheme: policyTag != null ? 'CPRE' : null,
-          onProgress: (message) {
-            setState(() {
-              _loadingMessage = message;
-            });
-          },
-        );
-        
-        AppLogger.log('Post created successfully: ${postResult['postId']}');
-        AppLogger.log('Post has ${postResult['attachedMediaCount']} attached media files');
 
-        // 🆕 Prepare storage cost + contract proposal before upload
-        setState(() {
-          _loadingMessage = 'Calculating storage cost...';
-        });
-        final storageInfo = await PostService.preparePostUploadWithStorageCost(
-          postResult: postResult,
-          storeBaseUrl: selectedNode['endpoint'],
-          appPublicKey: _userPublicKey!,
-          storageNodePublicKey: selectedNode['publicKey'] ?? '',
-          userMnemonic: _userMnemonic!,
-          onProgress: (message) {
-            setState(() {
-              _loadingMessage = message;
-            });
-          },
-        );
-        if (storageInfo['success'] != true) {
-          throw Exception(storageInfo['error'] ?? 'Failed to calculate storage cost');
-        }
+      final publisher = PostPublisher(
+        publicKey: me,
+        mnemonic: _userMnemonic!,
+        confirmStorage: _confirmStorageCostDialog,
+        onProgress: (message) {
+          if (mounted) setState(() => _loadingMessage = message);
+        },
+        onWarning: (message) {
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+        },
+      );
+      await publisher.publish(PostPublishRequest(
+        text: _textController.text,
+        media: media,
+        shareType: _shareType,
+        encryptedType: _encryptedType,
+        recipients: recipients,
+        sharedWithPublicKeys: _sharedWithPublicKeys,
+        preTag: usePre ? _preTag : null,
+        rekeyFor: rekeyFor,
+        authorName: userProfile?.fullName,
+        tags: _extractTags(_textController.text),
+      ));
 
-        setState(() {
-          _loadingMessage = 'Awaiting fee confirmation...';
-        });
-        final confirmed = await _confirmStorageCostDialog(storageInfo);
-        if (!confirmed) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Upload cancelled')),
-          );
-          return;
-        }
-
-        setState(() {
-          _loadingMessage = 'Signing storage contract...';
-        });
-        final contractId = storageInfo['contractId'] as String? ?? '';
-        if (contractId.isEmpty) {
-          throw Exception('Missing contractId from storage proposal');
-        }
-        await _signStorageContract(
-          storeBaseUrl: selectedNode['endpoint'],
-          contractId: contractId,
-        );
-
-        // 🆕 Upload the post to storage node manually using the encrypted data
-        setState(() {
-          _loadingMessage = 'Uploading post to storage...';
-        });
-        
-        // 🆕 ZERO-KNOWLEDGE SHARING: Handle multiple metadata entries
-        final metadataEntries = postResult['metadataEntries'] as List<Map<String, dynamic>>;
-        final postBlocks = postResult['blocks'] as List<Map<String, dynamic>>;
-        final postFileId = postResult['fileId'] as String;
-        createdPostId = postResult['postId']?.toString();
-        createdFileId = postFileId;
-        createdNodeId = selectedNode['id']?.toString();
-        createdShareType = _shareType;
-        createdEncryptedType = _encryptedType;
-        
-        // Ensure contractId is embedded in metadata for store/blocker submission
-        for (final entry in metadataEntries) {
-          entry['contractId'] = contractId;
-          entry['type'] ??= 'post';
-          entry['shareType'] ??= _shareType;
-        }
-
-        // Pay for storage before anything reaches the store node: the store submits the post to the
-        // chain once it has the metadata, so a short balance must stop the post here (402).
-        setState(() {
-          _loadingMessage = 'Paying for storage...';
-        });
-        final storageReg = await WalletService.registerStorage(
-          fileId: postFileId,
-          storeNodeIds: [selectedNode['id'].toString()],
-          sizeBytes: WalletService.storedBytes(metadataEntries, postBlocks),
-          blocks: WalletService.blockHashes(postBlocks),
-        );
-        if (storageReg.status == 402) {
-          throw Exception('Not enough D to store this post: ${storageReg.error}');
-        }
-        if (!storageReg.ok) {
-          AppLogger.log('Storage registration failed (${storageReg.status}), posting anyway: ${storageReg.error}');
-        }
-        if (storageReg.ok) paidUnuploadedFileId = postFileId;
-
-        // Upload metadata entries (one for each user with access)
-        for (int i = 0; i < metadataEntries.length; i++) {
-          final metadataEntry = metadataEntries[i];
-          final metadataJson = json.encode(metadataEntry);
-          
-          AppLogger.log('🔍 DEBUG: Uploading metadata entry ${i + 1}: fileId=${metadataEntry['fileId']}, firstBlockId=${metadataEntry['firstBlockId']}');
-          
-          setState(() {
-            _loadingMessage = 'Uploading metadata entry ${i + 1}/${metadataEntries.length}...';
-          });
-          
-          final metadataUploadResult = await _uploadContent(
-            nodeEndpoint: selectedNode['endpoint'],
-            path: '/api/file/upload-metadata-raw',
-            content: Uint8List.fromList(utf8.encode(metadataJson)),
-            fileName: '${postFileId}_metadata_${i}.json',
-            contentType: 'application/json',
-            publicKey: _userPublicKey!,
-            mnemonic: _userMnemonic!,
-          );
-          
-          if (metadataUploadResult['success'] != true) {
-            throw Exception('Failed to upload post metadata entry ${i + 1}: ${metadataUploadResult['error']}');
-          }
-        }
-        
-        // 🔧 FIX: Upload blocks với fileId tương ứng với metadata entry
-        // Block 0 (metadata blocks) - mỗi user có fileId riêng (upload riêng biệt)
-        // Content blocks (1+) - chỉ upload 1 lần với fileId của owner
-        
-        final ownerFileId = metadataEntries[0]['fileId'] as String; // Owner's fileId for content blocks
-        
-        // Separate metadata blocks (index 0) and content blocks (index > 0)
-        final List<Map<String, dynamic>> metadataBlocks = [];
-        final List<Map<String, dynamic>> contentBlocks = [];
-        
-        for (final block in postBlocks) {
-          final blockIndex = block['blockIndex'] as int;
-          final isMetadataBlock = block['isMetadataBlock'] as bool? ?? false;
-          
-          // Use both flags to be safe: isMetadataBlock OR blockIndex == 0
-          if (isMetadataBlock || blockIndex == 0) {
-            metadataBlocks.add(block);
-          } else {
-            contentBlocks.add(block);
-          }
-        }
-        
-        AppLogger.log('🔍 DEBUG: Separated ${metadataBlocks.length} metadata blocks, ${contentBlocks.length} content blocks');
-        
-        // 🔍 DEBUG: Print all blocks to see structure
-        for (int i = 0; i < postBlocks.length; i++) {
-          final block = postBlocks[i];
-          AppLogger.log('🔍 DEBUG: Block $i - blockId: ${block['blockId']}, blockIndex: ${block['blockIndex']}, isMetadata: ${block['isMetadataBlock']}');
-        }
-        
-        // Upload metadata blocks first (one for each user)
-        for (int i = 0; i < metadataBlocks.length; i++) {
-          final block = metadataBlocks[i];
-          final blockId = block['blockId'] as String;
-          final blockIndex = block['blockIndex'] as int; // Should be 0
-          final encryptedContent = block['encryptedContent'] as Uint8List;
-          
-          // Find the corresponding metadata entry for this block
-          Map<String, dynamic>? foundMetadata;
-          try {
-            foundMetadata = metadataEntries.firstWhere(
-              (entry) => entry['firstBlockId'] == blockId,
-            );
-          } catch (e) {
-            // For public posts or when no match found, use first entry
-            AppLogger.log('🔍 DEBUG: No metadata found for blockId: $blockId, using first entry');
-            foundMetadata = metadataEntries[0];
-          }
-          final fileIdForBlock = foundMetadata['fileId'] as String;
-          
-          setState(() {
-            _loadingMessage = 'Uploading metadata block ${i + 1}/${metadataBlocks.length}...';
-          });
-          
-          AppLogger.log('🔍 DEBUG: Metadata block - blockId: $blockId, fileIdForBlock: $fileIdForBlock');
-          AppLogger.log('🔍 DEBUG: correspondingMetadata: $foundMetadata');
-          
-          final blockUploadResult = await _uploadContent(
-            nodeEndpoint: selectedNode['endpoint'],
-            path: '/api/file/upload-file-block-raw',
-            content: encryptedContent,
-            fileName: blockId,
-            contentType: 'application/octet-stream',
-            publicKey: _userPublicKey!,
-            mnemonic: _userMnemonic!,
-            extraHeaders: {
-              'X-Block-Id': blockId,
-              'X-File-Id': fileIdForBlock, // Use respective user's fileId
-              'X-Block-Index': blockIndex.toString(),
-              if (contractId != null) 'X-Contract-Id': contractId, // 🆕 Pass ContractId
-            },
-          );
-          
-          if (blockUploadResult['success'] != true) {
-            throw Exception('Failed to upload metadata block $blockIndex: ${blockUploadResult['error']}');
-          }
-        }
-        
-        // Upload content blocks (shared among all users, use owner's fileId)
-        for (int i = 0; i < contentBlocks.length; i++) {
-          final block = contentBlocks[i];
-          final blockId = block['blockId'] as String;
-          final blockIndex = block['blockIndex'] as int; // Should be > 0
-          final encryptedContent = block['encryptedContent'] as Uint8List;
-          
-          setState(() {
-            _loadingMessage = 'Uploading content block ${i + 1}/${contentBlocks.length}...';
-          });
-          
-          AppLogger.log('🔍 DEBUG: Content block - blockId: $blockId, fileIdForBlock: $ownerFileId');
-          
-          final blockUploadResult = await _uploadContent(
-            nodeEndpoint: selectedNode['endpoint'],
-            path: '/api/file/upload-file-block-raw',
-            content: encryptedContent,
-            fileName: blockId,
-            contentType: 'application/octet-stream',
-            publicKey: _userPublicKey!,
-            mnemonic: _userMnemonic!,
-            extraHeaders: {
-              'X-Block-Id': blockId,
-              'X-File-Id': ownerFileId, // Always use owner's fileId for content blocks
-              'X-Block-Index': blockIndex.toString(),
-              if (contractId != null) 'X-Contract-Id': contractId, // 🆕 Pass ContractId
-            },
-          );
-          
-          if (blockUploadResult['success'] != true) {
-            throw Exception('Failed to upload content block $blockIndex: ${blockUploadResult['error']}');
-          }
-        }
-        
-        AppLogger.log('Post uploaded successfully to storage node: $postFileId');
-        paidUnuploadedFileId = null;
-
-
-        // 🆕 PRE Option2: Generate & upload rekeys for current followers
-        if (_shareType == 'followers' && _followersUsePre) {
-          try {
-            setState(() { _loadingMessage = 'Publishing PRE tag and uploading rekeys...'; });
-            final pre = PreService();
-            final tag = _preTag;
-            // Include self (author) to generate rk_{A->A} so author can view PRE posts in Following
-            final followerList = _subscribersOnly
-                ? [_userPublicKey!, ...await WalletService.getSubscribers()]
-                : _followers.toList();
-            final results = await pre.generateAndUploadRekeys(
-              apiBaseUrl: _apiBaseUrl,
-              authorPubKey: _userPublicKey!,
-              mnemonic: _userMnemonic!,
-              followerPubKeys: followerList,
-              tag: tag,
-            );
-            final okCount = results.values.where((v) => v).length;
-            AppLogger.log('PRE rekeys uploaded: $okCount/${results.length}');
-          } catch (e) {
-            AppLogger.log('PRE rekeys upload error: $e');
-          }
-        }
-      } else {
-        // Text-only post using PostService
-        AppLogger.log('DEBUG: Text-only post, no media to upload');
-        
-        // 1. Get available store nodes for text post too
-        AppLogger.log('DEBUG: Fetching available store nodes for text post...');
-        final storeNodes = await _fetchStoreNodes();
-        AppLogger.log('DEBUG: Received ${storeNodes.length} store nodes for text post');
-        
-        if (storeNodes.isEmpty) {
-          throw Exception('No available storage nodes found');
-        }
-        
-        // 2. Select a node to use
-        final selectedNode = _selectNode(storeNodes);
-        AppLogger.log('Selected node for text post: ${selectedNode['endpoint']}');
-        
-        setState(() {
-          _loadingMessage = 'Creating text post...';
-        });
-        
-        final String? policyTag = (_shareType == 'followers' && _followersUsePre)
-            ? _preTag
-            : null;
-        final postResult = await PostService.createPost(
-          textContent: _textController.text,
-          authorPublicKey: _userPublicKey!,
-          mnemonic: _userMnemonic!,
-          attachedMedia: null, // No media attachments
-          sharedWithUsers: allRecipients, // SỬA: luôn truyền đúng recipient
-          encryptedType: _encryptedType,
-          shareType: _shareType,
-          tags: _extractTags(_textController.text),
-          // 🆕 PRE fields (Option 2)
-          policyTag: policyTag,
-          capsuleFor: policyTag != null ? 'tag' : null,
-          policyScheme: policyTag != null ? 'CPRE' : null,
-          onProgress: (message) {
-            setState(() {
-              _loadingMessage = message;
-            });
-          },
-        );
-        
-        AppLogger.log('Text post created successfully: ${postResult['postId']}');
-
-        // 🆕 Prepare storage cost + contract proposal before upload
-        setState(() {
-          _loadingMessage = 'Calculating storage cost...';
-        });
-        final storageInfo = await PostService.preparePostUploadWithStorageCost(
-          postResult: postResult,
-          storeBaseUrl: selectedNode['endpoint'],
-          appPublicKey: _userPublicKey!,
-          storageNodePublicKey: selectedNode['publicKey'] ?? '',
-          userMnemonic: _userMnemonic!,
-          onProgress: (message) {
-            setState(() {
-              _loadingMessage = message;
-            });
-          },
-        );
-        if (storageInfo['success'] != true) {
-          throw Exception(storageInfo['error'] ?? 'Failed to calculate storage cost');
-        }
-
-        setState(() {
-          _loadingMessage = 'Awaiting fee confirmation...';
-        });
-        final confirmed = await _confirmStorageCostDialog(storageInfo);
-        if (!confirmed) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Upload cancelled')),
-          );
-          return;
-        }
-
-        setState(() {
-          _loadingMessage = 'Signing storage contract...';
-        });
-        final contractId = storageInfo['contractId'] as String? ?? '';
-        if (contractId.isEmpty) {
-          throw Exception('Missing contractId from storage proposal');
-        }
-        await _signStorageContract(
-          storeBaseUrl: selectedNode['endpoint'],
-          contractId: contractId,
-        );
-
-        // 🆕 Upload the text post to storage node
-        setState(() {
-          _loadingMessage = 'Uploading text post to storage...';
-        });
-        
-        // 🆕 ZERO-KNOWLEDGE SHARING: Handle multiple metadata entries
-        final metadataEntries = postResult['metadataEntries'] as List<Map<String, dynamic>>;
-        final postBlocks = postResult['blocks'] as List<Map<String, dynamic>>;
-        final postFileId = postResult['fileId'] as String;
-        createdPostId = postResult['postId']?.toString();
-        createdFileId = postFileId;
-        createdNodeId = selectedNode['id']?.toString();
-        createdShareType = _shareType;
-        createdEncryptedType = _encryptedType;
-        
-        // Ensure contractId is embedded in metadata for store/blocker submission
-        for (final entry in metadataEntries) {
-          entry['contractId'] = contractId;
-          entry['type'] ??= 'post';
-          entry['shareType'] ??= _shareType;
-        }
-
-        // Pay for storage before anything reaches the store node: the store submits the post to the
-        // chain once it has the metadata, so a short balance must stop the post here (402).
-        setState(() {
-          _loadingMessage = 'Paying for storage...';
-        });
-        final storageReg = await WalletService.registerStorage(
-          fileId: postFileId,
-          storeNodeIds: [selectedNode['id'].toString()],
-          sizeBytes: WalletService.storedBytes(metadataEntries, postBlocks),
-          blocks: WalletService.blockHashes(postBlocks),
-        );
-        if (storageReg.status == 402) {
-          throw Exception('Not enough D to store this post: ${storageReg.error}');
-        }
-        if (!storageReg.ok) {
-          AppLogger.log('Storage registration failed (${storageReg.status}), posting anyway: ${storageReg.error}');
-        }
-        if (storageReg.ok) paidUnuploadedFileId = postFileId;
-
-        // Upload metadata entries (one for each user with access)
-        for (int i = 0; i < metadataEntries.length; i++) {
-          final metadataEntry = metadataEntries[i];
-          final metadataJson = json.encode(metadataEntry);
-          
-          AppLogger.log('🔍 DEBUG TEXT: Uploading metadata entry ${i + 1}: fileId=${metadataEntry['fileId']}, firstBlockId=${metadataEntry['firstBlockId']}');
-          
-          setState(() {
-            _loadingMessage = 'Uploading text post metadata entry ${i + 1}/${metadataEntries.length}...';
-          });
-          
-          final metadataUploadResult = await _uploadContent(
-            nodeEndpoint: selectedNode['endpoint'],
-            path: '/api/file/upload-metadata-raw',
-            content: Uint8List.fromList(utf8.encode(metadataJson)),
-            fileName: '${postFileId}_metadata_${i}.json',
-            contentType: 'application/json',
-            publicKey: _userPublicKey!,
-            mnemonic: _userMnemonic!,
-          );
-          
-          if (metadataUploadResult['success'] != true) {
-            throw Exception('Failed to upload text post metadata entry ${i + 1}: ${metadataUploadResult['error']}');
-          }
-        }
-        
-        // 🔧 FIX: Upload blocks với fileId tương ứng với metadata entry (same as above)
-        final ownerFileId = metadataEntries[0]['fileId'] as String; // Owner's fileId for content blocks
-        
-        // Separate metadata blocks (index 0) and content blocks (index > 0)
-        final List<Map<String, dynamic>> metadataBlocks = [];
-        final List<Map<String, dynamic>> contentBlocks = [];
-        
-        for (final block in postBlocks) {
-          final blockIndex = block['blockIndex'] as int;
-          final isMetadataBlock = block['isMetadataBlock'] as bool? ?? false;
-          
-          // Use both flags to be safe: isMetadataBlock OR blockIndex == 0
-          if (isMetadataBlock || blockIndex == 0) {
-            metadataBlocks.add(block);
-          } else {
-            contentBlocks.add(block);
-          }
-        }
-        
-        AppLogger.log('🔍 DEBUG TEXT: Separated ${metadataBlocks.length} metadata blocks, ${contentBlocks.length} content blocks');
-        
-        // 🔍 DEBUG: Print all blocks to see structure
-        for (int i = 0; i < postBlocks.length; i++) {
-          final block = postBlocks[i];
-          AppLogger.log('🔍 DEBUG TEXT: Block $i - blockId: ${block['blockId']}, blockIndex: ${block['blockIndex']}, isMetadata: ${block['isMetadataBlock']}');
-        }
-        
-        // Upload metadata blocks first (one for each user)
-        for (int i = 0; i < metadataBlocks.length; i++) {
-          final block = metadataBlocks[i];
-          final blockId = block['blockId'] as String;
-          final blockIndex = block['blockIndex'] as int; // Should be 0
-          final encryptedContent = block['encryptedContent'] as Uint8List;
-          
-          // Find the corresponding metadata entry for this block
-          Map<String, dynamic>? foundMetadata;
-          try {
-            foundMetadata = metadataEntries.firstWhere(
-              (entry) => entry['firstBlockId'] == blockId,
-            );
-          } catch (e) {
-            // For public posts or when no match found, use first entry
-            AppLogger.log('🔍 DEBUG: No metadata found for blockId: $blockId, using first entry');
-            foundMetadata = metadataEntries[0];
-          }
-          final fileIdForBlock = foundMetadata['fileId'] as String;
-          
-          setState(() {
-            _loadingMessage = 'Uploading text metadata block ${i + 1}/${metadataBlocks.length}...';
-          });
-          
-          AppLogger.log('🔍 DEBUG TEXT: Metadata block - blockId: $blockId, fileIdForBlock: $fileIdForBlock');
-          AppLogger.log('🔍 DEBUG TEXT: correspondingMetadata: $foundMetadata');
-          
-          final blockUploadResult = await _uploadContent(
-            nodeEndpoint: selectedNode['endpoint'],
-            path: '/api/file/upload-file-block-raw',
-            content: encryptedContent,
-            fileName: blockId,
-            contentType: 'application/octet-stream',
-            publicKey: _userPublicKey!,
-            mnemonic: _userMnemonic!,
-            extraHeaders: {
-              'X-Block-Id': blockId,
-              'X-File-Id': fileIdForBlock, // Use respective user's fileId
-              'X-Block-Index': blockIndex.toString(),
-              if (contractId != null) 'X-Contract-Id': contractId, // 🆕 Pass ContractId
-            },
-          );
-          
-          if (blockUploadResult['success'] != true) {
-            throw Exception('Failed to upload text metadata block $blockIndex: ${blockUploadResult['error']}');
-          }
-        }
-        
-        // Upload content blocks (shared among all users, use owner's fileId)
-        for (int i = 0; i < contentBlocks.length; i++) {
-          final block = contentBlocks[i];
-          final blockId = block['blockId'] as String;
-          final blockIndex = block['blockIndex'] as int; // Should be > 0
-          final encryptedContent = block['encryptedContent'] as Uint8List;
-          
-          setState(() {
-            _loadingMessage = 'Uploading text content block ${i + 1}/${contentBlocks.length}...';
-          });
-          
-          AppLogger.log('🔍 DEBUG TEXT: Content block - blockId: $blockId, fileIdForBlock: $ownerFileId');
-          
-          final blockUploadResult = await _uploadContent(
-            nodeEndpoint: selectedNode['endpoint'],
-            path: '/api/file/upload-file-block-raw',
-            content: encryptedContent,
-            fileName: blockId,
-            contentType: 'application/octet-stream',
-            publicKey: _userPublicKey!,
-            mnemonic: _userMnemonic!,
-            extraHeaders: {
-              'X-Block-Id': blockId,
-              'X-File-Id': ownerFileId, // Always use owner's fileId for content blocks
-              'X-Block-Index': blockIndex.toString(),
-              if (contractId != null) 'X-Contract-Id': contractId, // 🆕 Pass ContractId
-            },
-          );
-          
-          if (blockUploadResult['success'] != true) {
-            throw Exception('Failed to upload text content block $blockIndex: ${blockUploadResult['error']}');
-          }
-        }
-        
-        AppLogger.log('Text post uploaded successfully to storage node: $postFileId');
-        paidUnuploadedFileId = null;
-
-
-        // 🆕 PRE Option2: Generate & upload rekeys for current followers
-        if (_shareType == 'followers' && _followersUsePre) {
-          try {
-            setState(() { _loadingMessage = 'Publishing PRE tag and uploading rekeys...'; });
-            final pre = PreService();
-            final tag = _preTag;
-            final followerList = (_subscribersOnly ? await WalletService.getSubscribers() : _followers)
-                .where((f) => f != _userPublicKey)
-                .toList();
-            final results = await pre.generateAndUploadRekeys(
-              apiBaseUrl: _apiBaseUrl,
-              authorPubKey: _userPublicKey!,
-              mnemonic: _userMnemonic!,
-              followerPubKeys: followerList,
-              tag: tag,
-            );
-            final okCount = results.values.where((v) => v).length;
-            AppLogger.log('PRE rekeys uploaded: $okCount/${results.length}');
-          } catch (e) {
-            AppLogger.log('PRE rekeys upload error: $e');
-          }
-        }
-      }
-      
       if (!mounted) return;
-
-      if (createdPostId != null && createdFileId != null && createdNodeId != null) {
-        AppLogger.log('Post created; blockchain submission handled by Store node.');
-      }
-      
-      // Show success message
-      final String successMessage = _sharedWithPublicKeys.isNotEmpty
-          ? 'Post created successfully! Files shared with ${_sharedWithPublicKeys.length} additional users.'
-          : 'Post created successfully!';
-      
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(successMessage),
+          content: Text(_sharedWithPublicKeys.isNotEmpty
+              ? 'Post created successfully! Files shared with ${_sharedWithPublicKeys.length} additional users.'
+              : 'Post created successfully!'),
           backgroundColor: Colors.green,
           duration: Duration(seconds: _sharedWithPublicKeys.isNotEmpty ? 4 : 2),
         ),
       );
-      
-      // Return to home screen
       context.go(AppRoutes.localUserHome, extra: userProfile);
+    } on PostPublishCancelled {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Upload cancelled')));
     } catch (e) {
       AppLogger.log('Error creating post: $e');
-      final unpaidFileId = paidUnuploadedFileId;
-      if (unpaidFileId != null) {
-        // Paid but the upload failed: get the fee back and spare the Stores a challenge on missing blocks.
-        await WalletService.cancelStorage(unpaidFileId);
-      }
       if (!mounted) return;
-      
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to create post: ${e.toString()}'),
-          backgroundColor: DeltaniumTheme.errorColor,
-        ),
+        SnackBar(content: Text('Failed to create post: ${e.toString()}'), backgroundColor: DeltaniumTheme.errorColor),
       );
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
-  
-  // Helper methods for file uploads
-  
-  // Fetch available store nodes
-  Future<List<Map<String, dynamic>>> _fetchStoreNodes() async {
-    return StoreNodeDirectory.listNodes();
-  }
-  
-  // Select primary + replica Store nodes (N-of-M).
-  Map<String, dynamic> _selectNode(List<Map<String, dynamic>> nodes) {
-    return _selectNodes(nodes).first;
-  }
 
-  List<Map<String, dynamic>> _selectNodes(List<Map<String, dynamic>> nodes) {
-    return StoreNodeDirectory.pickForUpload(nodes, AppConstants.replicationFactor);
-  }
-  
-  // Upload media to a storage node (and optional N-of-M replicas)
-  Future<Map<String, dynamic>> _uploadMediaToNode({
-    required Map<String, dynamic> media,
-    required Map<String, dynamic> node,
-    List<Map<String, dynamic>>? replicaNodes,
-    required String publicKey,
-    required String mnemonic,
-    Function(String)? onProgress, // Progress callback
-  }) async {
-    final String fileName = (media['name'] as String?) ?? 'file.dat';
-    
-    try {
-      // Step 1: Prepare file data
-      late Uint8List fileBytes;
-      if (kIsWeb && media.containsKey('bytes')) {
-        final bytes = media['bytes'] as List<int>;
-        fileBytes = Uint8List.fromList(bytes);
-      } else if (!kIsWeb && media.containsKey('path')) {
-        final path = media['path'] as String;
-        fileBytes = await File(path).readAsBytes();
-      } else {
-        throw Exception('Cannot read file bytes');
-      }
-      
-      AppLogger.log('Uploading file: $fileName (${fileBytes.length} bytes) using FileUploadService');
-      
-      // Use proper FileUploadService to handle encryption and splitting
-      AppLogger.log('CreatePost: Using FileUploadService for proper file splitting and encryption');
-      
-      final fileUploadService = FileUploadService();
-      
-      // Determine PRE policy for followers
-      final String? mediaPolicyTag = (_shareType == 'followers' && _followersUsePre)
-          ? _preTag
-          : null;
-      final String? mediaCapsuleFor = mediaPolicyTag != null ? 'tag' : null;
-      final String? mediaPolicyScheme = mediaPolicyTag != null ? 'CPRE' : null;
-      
-      final uploadResult = await fileUploadService.uploadEncryptedFile(
-            fileData: fileBytes,
-            fileName: fileName,
-            publicKey: publicKey,
-            mnemonic: mnemonic,
-            sharedWithUsers: _sharedWithPublicKeys.isNotEmpty ? _sharedWithPublicKeys : null,
-            selectedNode: node,
-            replicaNodes: replicaNodes,
-            onProgress: onProgress,
-            fileType: 'file',
-            shareType: _shareType,
-            policyTag: mediaPolicyTag,
-            capsuleFor: mediaCapsuleFor,
-            policyScheme: mediaPolicyScheme,
-          );
-      
-      if (uploadResult['success'] != true) {
-        throw Exception('FileUploadService failed: ${uploadResult['error']}');
-      }
-
-      if (uploadResult['blockchainSubmitted'] == false) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Metadata uploaded, but blockchain submission failed. Will retry in background.'),
-          ),
-        );
-      }
-      
-      AppLogger.log('CreatePost: File uploaded successfully with ${uploadResult['blockCount']} blocks');
-      
-      return {
-        'fileId': uploadResult['fileId'],
-        'fileName': uploadResult['fileName'],
-        'fileSize': uploadResult['fileSize'],
-        'url': uploadResult['url'],
-        'blockCount': uploadResult['blockCount'],
-        'encryptedKey': uploadResult['encryptedKey'], // 🆕 Add encryptedKey from upload result
-      };
-    } catch (e) {
-      AppLogger.log('Error in file upload: $e');
-      rethrow;
-    }
-  }
-  
-  // Helper method to handle the common upload logic
-  Future<Map<String, dynamic>> _uploadContent({
-    required String nodeEndpoint,
-    required String path,
-    required Uint8List content,
-    required String fileName,
-    required String contentType,
-    required String publicKey,
-    required String mnemonic,
-    Map<String, String>? extraHeaders,
-  }) async {
-    try {
-      final mnemonicToUse = _userMnemonic;
-      if (mnemonicToUse == null) {
-        throw Exception('No user credentials available for signing');
-      }
-
-      final uri = Uri.parse('$nodeEndpoint$path');
-      AppLogger.log('DEBUG: Creating request to $uri');
-
-      // Calculate content hash for signing - use SHA256 as in C# demo
-      final digest = await CryptoService.hashSHA256(content);
-      final bodyHash = base64.encode(digest);
-      AppLogger.log('DEBUG: Raw content bytes length: ${content.length}');
-      AppLogger.log('DEBUG: Content hash (base64): ${bodyHash}');
-
-      // Generate signature components - format exactly like C# RequestSigner
-      final timestamp = (DateTime.now().millisecondsSinceEpoch / 1000).floor().toString();
-      final method = 'POST'; // Must be uppercase
-      final pathForSigning = Uri.parse(path).path;
-      final buffer = StringBuffer();
-      buffer.write(method);
-      buffer.write(pathForSigning);
-      buffer.write(timestamp);
-      buffer.write(bodyHash);
-      final dataToSign = buffer.toString();
-      AppLogger.log('DEBUG: Data being signed: ${dataToSign}');
-      AppLogger.log('DEBUG: Data bytes length: ${utf8.encode(dataToSign).length}');
-
-      // Generate a key pair from mnemonic
-      final keyPair = CryptoService.generateKeyPairFromMnemonic(mnemonicToUse);
-      String signature;
-      try {
-        signature = await CryptoService.sign(dataToSign, kIsWeb ? mnemonicToUse : keyPair);
-        AppLogger.log('DEBUG: Generated signature: ${signature}');
-      } catch (e) {
-        AppLogger.log('DEBUG: Error during signing: ${e}');
-        rethrow;
-      }
-
-      // Use http.Request for raw body (not multipart)
-      final headers = {
-        'Content-Type': contentType,
-        'X-User-PubKey': CryptoService.normalizePublicKey(publicKey),
-        'X-Timestamp': timestamp,
-        'X-Signature': signature,
-      };
-      
-      // Add any extra headers if provided
-      if (extraHeaders != null) {
-        headers.addAll(extraHeaders);
-      }
-
-      final request = http.Request('POST', uri)
-        ..headers.addAll(headers)
-        ..bodyBytes = content;
-
-      AppLogger.log('DEBUG: Request headers:');
-      request.headers.forEach((key, value) {
-        AppLogger.log('  ${key}: ${value}');
-      });
-
-      AppLogger.log('DEBUG: Sending request...');
-      final response = await request.send();
-      final resp = await http.Response.fromStream(response);
-
-      AppLogger.log('DEBUG: Response status: ${resp.statusCode}');
-      AppLogger.log('DEBUG: Response body: ${resp.body}');
-
-      if (resp.statusCode == 200) {
-        return {
-          'success': true,
-          'response': json.decode(resp.body),
-        };
-      } else {
-        return {
-          'success': false,
-          'error': 'HTTP ${resp.statusCode}: ${resp.body}',
-        };
-      }
-    } catch (e) {
-      AppLogger.log('DEBUG: Exception in _uploadContent: ${e}');
-      return {
-        'success': false,
-        'error': e.toString(),
-      };
-    }
-  }
-  
-  
-
-  // Register the file with the central API
-  Future<void> _registerFileWithAPI({
-    required String fileId,
-    required String fileName,
-    required String fileType,
-    required String nodeId,
-    required String publicKey,
-  }) async {
-    try {
-      // 🔧 FIX: Normalize to compressed format for API consistency
-      final normalizedPublicKey = CryptoService.convertToCompressedPublicKey(publicKey);
-      
-      final storedFileData = {
-        'fileId': fileId,
-        'ownerPublicKey': normalizedPublicKey, // Use compressed format
-        'storeNodeId': nodeId,
-        'fileName': fileName,
-        'fileType': fileType,
-        'fileSize': 0, // Size would be available from upload response
-        'createdAt': DateTime.now().toUtc().toIso8601String(),
-      };
-      
-      final response = await http.post(
-        Uri.parse('$_apiBaseUrl/storedfile/register'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode(storedFileData),
-      );
-      
-      if (response.statusCode != 200) {
-        AppLogger.log('Warning: Failed to register file with API: ${response.statusCode}');
-      }
-    } catch (e) {
-      AppLogger.log('Warning: Error registering file: $e');
-      // Non-fatal error - file is already on the store node
-    }
-  }
-  
   @override
   Widget build(BuildContext context) {
     final userProfile = widget.userProfile;

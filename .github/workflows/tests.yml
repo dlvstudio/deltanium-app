@@ -18,4 +18,43 @@ jobs:
       - uses: subosito/flutter-action@v2
         with: { channel: stable, cache: true }
       - run: flutter pub get
+      - name: Compile check (errors only)
+        if: matrix.os == 'ubuntu-latest'
+        # crypto_web_signer_real.dart is web-only (dart:js_util) and cannot be analyzed for the VM.
+        run: |
+          flutter analyze --no-fatal-infos --no-fatal-warnings lib test > analyze.txt || true
+          grep "error •" analyze.txt | grep -v "crypto_web_signer_real.dart" > errors.txt || true
+          cat errors.txt
+          test ! -s errors.txt
       - run: flutter test --reporter expanded
+
+  # Crypto round trips with the real native libraries: webcrypto (file encryption) and Umbral PRE.
+  native-crypto:
+    runs-on: ubuntu-latest
+    env:
+      UMBRAL_REF: 6f692dd5f2944889c45185875545a0159ea7b735
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: app }
+      - uses: actions/checkout@v4
+        with: { repository: dlvstudio/deltanium-core, path: core }
+      - uses: actions/checkout@v4
+        with: { repository: nucypher/rust-umbral, ref: '${{ env.UMBRAL_REF }}', path: core/.vendor/rust-umbral }
+      - name: Build libumbral_pre.so
+        working-directory: core/native/umbral_pre
+        run: cargo build --release
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable, cache: true }
+      - name: Build webcrypto for tests
+        working-directory: app
+        run: |
+          flutter pub get
+          flutter pub run webcrypto:setup
+      - name: Crypto round trips
+        working-directory: app
+        env:
+          DELTANIUM_NATIVE_CRYPTO: '1'
+          DELTANIUM_UMBRAL: '1'
+        run: |
+          export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/core/native/umbral_pre/target/release:$LD_LIBRARY_PATH"
+          flutter test test/crypto_roundtrip_test.dart --reporter expanded
