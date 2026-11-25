@@ -887,7 +887,9 @@ class _LocalUserProfileScreenState extends State<LocalUserProfileScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppLangBuilder(builder: _build);
+
+  Widget _build(BuildContext context) {
     final displayName =
         _profile.fullName ?? _profile.email ?? 'Local User';
     final initial = displayName.trim().isNotEmpty
@@ -901,12 +903,18 @@ class _LocalUserProfileScreenState extends State<LocalUserProfileScreen> {
         elevation: 0,
         scrolledUnderElevation: 0,
         title: Text(
-          'Profile',
+          tr('nav.profile'),
           style: GoogleFonts.syne(
             color: Brand.text,
             fontWeight: FontWeight.w700,
           ),
         ),
+        actions: const [
+          Padding(
+            padding: EdgeInsets.only(right: 8),
+            child: LangSwitch(color: Brand.muted, activeColor: Brand.sand),
+          ),
+        ],
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded, color: Brand.text),
           onPressed: () =>

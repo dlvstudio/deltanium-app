@@ -7,6 +7,7 @@ import 'package:deltanium_app/features/posts/screens/public_posts_screen.dart';
 import 'package:deltanium_app/models/user_profile.dart';
 import 'package:deltanium_app/services/chat_service.dart';
 import 'package:deltanium_app/widgets/navigation_menu.dart';
+import 'package:deltanium_app/l10n/app_lang.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -47,7 +48,9 @@ class _LocalUserHomeScreenState extends State<LocalUserHomeScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppLangBuilder(builder: _build);
+
+  Widget _build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isDesktop = screenWidth >= 980;
     final showRightRail = screenWidth >= 1200;
@@ -110,10 +113,10 @@ class _LocalUserHomeScreenState extends State<LocalUserHomeScreen>
                       fontWeight: FontWeight.w500,
                       fontSize: 14,
                     ),
-                    tabs: const [
-                      Tab(text: 'My Posts'),
-                      Tab(text: 'Following'),
-                      Tab(text: 'Public'),
+                    tabs: [
+                      Tab(text: tr('home.tab.mine')),
+                      Tab(text: tr('home.tab.following')),
+                      Tab(text: tr('home.tab.public')),
                     ],
                   ),
                 ),
@@ -191,8 +194,9 @@ class _LocalUserHomeScreenState extends State<LocalUserHomeScreen>
               ),
             ),
           const Spacer(),
+          const LangSwitch(color: Brand.muted, activeColor: Brand.sand),
           IconButton(
-            tooltip: 'Messages',
+            tooltip: tr('nav.messages'),
             onPressed: () => context.go(AppRoutes.messages),
             icon: Badge(
               isLabelVisible: _unreadMessageCount > 0,
@@ -205,7 +209,7 @@ class _LocalUserHomeScreenState extends State<LocalUserHomeScreen>
             ),
           ),
           IconButton(
-            tooltip: 'Profile',
+            tooltip: tr('nav.profile'),
             onPressed: () => context.go(
               AppRoutes.localUserProfile,
               extra: widget.userProfile,

@@ -76,6 +76,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
           ),
           title: Text(tr('tx.title'), style: GoogleFonts.syne(fontWeight: FontWeight.w700)),
           actions: [
+            const LangSwitch(color: Brand.muted, activeColor: Brand.sand),
             IconButton(
               tooltip: tr('tx.refresh'),
               icon: const Icon(Icons.refresh_rounded),

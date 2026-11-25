@@ -3,6 +3,7 @@ import 'package:deltanium_app/config/brand.dart';
 import 'package:deltanium_app/config/theme.dart';
 import 'package:deltanium_app/models/user_profile.dart';
 import 'package:deltanium_app/services/chat_service.dart';
+import 'package:deltanium_app/l10n/app_lang.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -40,7 +41,10 @@ class _NavigationMenuState extends State<NavigationMenu> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      ValueListenableBuilder<AppLang>(valueListenable: appLang, builder: (context, _, __) => _build(context));
+
+  Widget _build(BuildContext context) {
     final items = <Widget>[
       Padding(
         padding: const EdgeInsets.fromLTRB(12, 4, 12, 28),
@@ -90,7 +94,7 @@ class _NavigationMenuState extends State<NavigationMenu> {
         context,
         icon: Icons.home_outlined,
         selectedIcon: Icons.home_rounded,
-        label: 'Home',
+        label: tr('nav.home'),
         index: 0,
         route: AppRoutes.localUserHome,
       ),
@@ -98,7 +102,7 @@ class _NavigationMenuState extends State<NavigationMenu> {
         context,
         icon: Icons.search_rounded,
         selectedIcon: Icons.search_rounded,
-        label: 'Explore',
+        label: tr('nav.explore'),
         index: 1,
         route: AppRoutes.search,
       ),
@@ -106,7 +110,7 @@ class _NavigationMenuState extends State<NavigationMenu> {
         context,
         icon: Icons.mail_outline_rounded,
         selectedIcon: Icons.mail_rounded,
-        label: 'Messages',
+        label: tr('nav.messages'),
         index: 3,
         route: AppRoutes.messages,
         badgeCount: _unreadCount,
@@ -115,7 +119,7 @@ class _NavigationMenuState extends State<NavigationMenu> {
         context,
         icon: Icons.receipt_long_outlined,
         selectedIcon: Icons.receipt_long_rounded,
-        label: 'Transactions',
+        label: tr('nav.transactions'),
         index: 4,
         route: AppRoutes.transactions,
       ),
@@ -123,7 +127,7 @@ class _NavigationMenuState extends State<NavigationMenu> {
         context,
         icon: Icons.person_outline_rounded,
         selectedIcon: Icons.person_rounded,
-        label: 'Profile',
+        label: tr('nav.profile'),
         index: 2,
         route: AppRoutes.localUserProfile,
       ),
@@ -149,12 +153,25 @@ class _NavigationMenuState extends State<NavigationMenu> {
           ),
         ),
         child: Text(
-          'Create Post',
+          tr('nav.createPost'),
           style: GoogleFonts.manrope(
             fontSize: 15,
             fontWeight: FontWeight.w700,
           ),
         ),
+      ),
+    );
+
+    final langRow = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      child: Row(
+        children: [
+          const Icon(Icons.translate_rounded, size: 18, color: Brand.muted),
+          const SizedBox(width: 8),
+          Text(tr('nav.language'), style: GoogleFonts.manrope(color: Brand.muted, fontSize: 14)),
+          const Spacer(),
+          const LangSwitch(color: Brand.muted, activeColor: Brand.sand),
+        ],
       ),
     );
 
@@ -171,6 +188,7 @@ class _NavigationMenuState extends State<NavigationMenu> {
                   children: [
                     ...items,
                     const Spacer(),
+                    langRow,
                     createButton,
                   ],
                 );
@@ -178,6 +196,7 @@ class _NavigationMenuState extends State<NavigationMenu> {
               return ListView(
                 children: [
                   ...items,
+                  langRow,
                   createButton,
                 ],
               );
