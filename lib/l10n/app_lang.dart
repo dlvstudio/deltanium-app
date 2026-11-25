@@ -185,7 +185,7 @@ const Map<AppLang, Map<String, String>> appStrings = {
     'landing.e3.desc': 'Set a monthly subscription or take tips. You keep 90%.',
     'landing.earn.note': '1 D = 1 VND, backed 1:1. Node income depends on real usage and is not guaranteed.',
     'landing.final.title': 'Come for friends. Stay for privacy. Run a node to share in it.',
-    'landing.final.sub': 'Your account starts on this device, free — 200 MB of storage included.',
+    'landing.final.sub': 'Your account starts on this device, free. Pay only for the storage you use.',
     'landing.footer': '© 2026 Deltanium',
     // Login – brand panel
     'login.brand.line': 'Your social life — without selling your privacy.',
@@ -318,7 +318,7 @@ const Map<AppLang, Map<String, String>> appStrings = {
     'landing.e3.desc': 'Đặt gói đăng ký hằng tháng hoặc nhận tip. Bạn giữ 90%.',
     'landing.earn.note': '1 D = 1 VND, bảo chứng 1:1. Thu nhập của node phụ thuộc vào mức sử dụng thực tế và không được đảm bảo.',
     'landing.final.title': 'Đến vì bạn bè. Ở lại vì riêng tư. Góp máy để cùng hưởng.',
-    'landing.final.sub': 'Tài khoản bắt đầu ngay trên máy này, miễn phí — kèm 200 MB lưu trữ.',
+    'landing.final.sub': 'Tài khoản bắt đầu ngay trên máy này, miễn phí. Chỉ trả cho dung lượng bạn dùng.',
     'landing.footer': '© 2026 Deltanium',
     // Login – brand panel
     'login.brand.line': 'Đời sống xã hội của bạn — không bán quyền riêng tư.',

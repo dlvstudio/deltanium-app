@@ -345,12 +345,14 @@ class _LocalUserProfileScreenState extends State<LocalUserProfileScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            free['eligible'] == true
-                ? 'Free storage: ${_mb(free['storageUsedBytes'])} / ${_mb(free['storageQuotaBytes'])}'
-                : 'Free tier: verify your email to get ${_mb(free['storageQuotaBytes'])} free storage',
-            style: style,
-          ),
+          // The network may offer no free storage (quota 0): then say nothing about it.
+          if (((free['storageQuotaBytes'] as num?) ?? 0) > 0)
+            Text(
+              free['eligible'] == true
+                  ? 'Free storage: ${_mb(free['storageUsedBytes'])} / ${_mb(free['storageQuotaBytes'])}'
+                  : 'Free tier: verify your email to get ${_mb(free['storageQuotaBytes'])} free storage',
+              style: style,
+            ),
           if (free['emailVerified'] != true)
             Align(
               alignment: Alignment.centerLeft,
@@ -358,7 +360,9 @@ class _LocalUserProfileScreenState extends State<LocalUserProfileScreen> {
                 style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 32)),
                 onPressed: _verifyEmail,
                 child: Text(
-                  free['requiresVerifiedEmail'] == true ? 'Verify email to keep free storage' : 'Verify email',
+                  free['requiresVerifiedEmail'] == true && ((free['storageQuotaBytes'] as num?) ?? 0) > 0
+                      ? 'Verify email to keep free storage'
+                      : 'Verify email',
                   style: GoogleFonts.manrope(color: Brand.sand, fontSize: 12, fontWeight: FontWeight.w600),
                 ),
               ),

@@ -135,8 +135,7 @@ class _ConfirmStorageCostDialogState extends State<ConfirmStorageCostDialog> {
     if (widget.reservedBundle) {
       return (
         true,
-        'Free: ${widget.itemLabel}s are never charged to your wallet. Each one counts only its own size '
-            'toward your free storage, not the reserved space.',
+        'Free: ${widget.itemLabel}s are never charged to your wallet.',
       );
     }
     final free = _usage?['freeTier'] as Map<String, dynamic>?;
@@ -155,18 +154,20 @@ class _ConfirmStorageCostDialogState extends State<ConfirmStorageCostDialog> {
     }
     final blocked = _blockedReason;
     if (blocked != null) return (false, blocked);
+    // With no free storage on the network (quota 0) every post is plain paid storage.
+    final hasFree = ((free?['storageQuotaBytes'] as num?) ?? 0) > 0;
+    final lead = hasFree ? 'Beyond your free storage' : 'Storage fee';
     if (_quote != null && _quote!['enforceFees'] != true) {
-      return (true, 'Beyond your free storage, but storage fees are not charged on this network yet.');
+      return (true, '$lead: storage fees are not charged on this network yet.');
     }
     final total = ((_quote?['quote'] as Map<String, dynamic>?)?['totalFee'] as num?)?.toDouble();
     if (total != null) {
-      return (false, 'Beyond your free storage: ${DFormat.full(total)} is deducted from your wallet for paid storage.');
+      return (false, '$lead: ${DFormat.full(total)} is deducted from your wallet for paid storage.');
     }
     final price = (_usage?['storage'] as Map<String, dynamic>?)?['pricePerGbMonth'] ?? 800;
     return (
       false,
-      'Beyond your free storage this is billed from your wallet as paid storage '
-          '($price D/GB/month per replica).',
+      '$lead: billed from your wallet as paid storage ($price D/GB/month per replica).',
     );
   }
 
