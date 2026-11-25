@@ -401,6 +401,10 @@ class _PostCommentsSectionState extends State<PostCommentsSection> {
         contractId: contractId, // 🆕 Pass contractId
         fileId: fileId,
         firstBlockId: firstBlockId,
+        confirmedCharge: totalFee,
+        reconfirmCharge: (charge) => mounted
+            ? confirmStorageCharge(context, fileName: 'Comment', sizeBytes: 0, charge: charge, itemLabel: 'comment')
+            : Future.value(false),
         confirmMediaCharge: (name, size, charge) => mounted
             ? confirmStorageCharge(context, fileName: name, sizeBytes: size, charge: charge, itemLabel: 'attachment')
             : Future.value(false),

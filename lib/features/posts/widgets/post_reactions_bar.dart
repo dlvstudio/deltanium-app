@@ -367,6 +367,10 @@ class _PostReactionsBarState extends State<PostReactionsBar> {
       contractId: contractId,
       fileId: fileId,
       firstBlockId: firstBlockId,
+      confirmedCharge: totalFee,
+      reconfirmCharge: (charge) => mounted
+          ? confirmStorageCharge(context, fileName: 'Reaction', sizeBytes: 0, charge: charge, itemLabel: 'reaction')
+          : Future.value(false),
     );
     if (!ok) {
       setState(() {

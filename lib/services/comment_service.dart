@@ -32,6 +32,9 @@ class CommentService {
     String? firstBlockId,
     /// Confirms Central's exact charge for each attached file before it is uploaded; false skips that file.
     Future<bool> Function(String fileName, int sizeBytes, double charge)? confirmMediaCharge,
+    /// The charge the user confirmed for the comment; checked against the real size before it is uploaded.
+    double? confirmedCharge,
+    Future<bool> Function(double charge)? reconfirmCharge,
   }) async {
     try {
       if (commentText.trim().isEmpty) {
@@ -171,6 +174,11 @@ class CommentService {
           'createdAt': now,
           if (relatedFiles != null) 'relatedFiles': relatedFiles, // 🆕 Add relatedFiles
         };
+        if (!await WalletService.chargeMatchesConfirmed(
+          sizeBytes: utf8.encode(json.encode(metadata)).length + utf8.encode(json.encode(block0)).length,
+          confirmed: confirmedCharge,
+          reconfirm: reconfirmCharge,
+        )) return false;
 
         // Upload metadata and block0
         final metaOk = await _uploadRaw(
@@ -249,6 +257,17 @@ class CommentService {
 
         final metadataEntries = List<Map<String, dynamic>>.from(result['metadataEntries'] as List);
         final blocks = List<Map<String, dynamic>>.from(result['blocks'] as List);
+        for (final entry in metadataEntries) {
+          entry['type'] = 'comment';
+          entry['parentFileId'] = postFileId;
+          entry['ownerPubKey'] = CryptoService.normalizePublicKey(userPublicKey);
+          if (contractId != null) entry['contractId'] = contractId;
+        }
+        if (!await WalletService.chargeMatchesConfirmed(
+          sizeBytes: WalletService.storedBytes(metadataEntries, blocks),
+          confirmed: confirmedCharge,
+          reconfirm: reconfirmCharge,
+        )) return false;
 
         // Upload all metadata entries
         for (int i = 0; i < metadataEntries.length; i++) {
@@ -481,7 +500,7 @@ class CommentService {
       final endDate = now.add(Duration(days: durationDays)).millisecondsSinceEpoch ~/ 1000;
 
       // What Central takes for this social item (0 within the monthly social allowance, if the network has one;
-      // otherwise items up to ~55 KB are billed the 1 D minimum whatever their exact size). Recorded as the contract fee.
+      // otherwise small items are billed the minimum fee; sendReaction/sendComment re-check the real size). Recorded as the contract fee.
       final charge = await WalletService.quoteCharge(
         sizeBytes: estimatedSize,
         storeNodes: 1,

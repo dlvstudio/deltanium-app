@@ -253,6 +253,27 @@ class WalletService {
     return c is num ? c.toDouble() : null;
   }
 
+  /// Before uploading a reaction or comment: the charge for its real [sizeBytes] (as registerStorageAt will pay)
+  /// must equal the [confirmed] one, else [reconfirm] is asked with the new exact charge. True to go ahead.
+  static Future<bool> chargeMatchesConfirmed({
+    required int sizeBytes,
+    required double? confirmed,
+    Future<bool> Function(double charge)? reconfirm,
+    bool social = true,
+  }) async {
+    if (confirmed == null) return true;
+    final actual = await quoteCharge(
+      sizeBytes: sizeBytes,
+      storeNodes: 1,
+      replicas: AppConstants.replicationFactor,
+      social: social,
+    );
+    if (actual == null) return false;
+    if (actual == confirmed) return true;
+    AppLogger.log('WalletService: charge for $sizeBytes B is $actual D, confirmed $confirmed D');
+    return reconfirm != null && await reconfirm(actual);
+  }
+
   static Future<Map<String, dynamic>?> quoteStorage({
     required int sizeBytes,
     int replicas = 2,
