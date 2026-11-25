@@ -49,7 +49,7 @@ class ConfirmStorageCostDialog extends StatefulWidget {
   final List<StorageChargeLine> breakdown;
 
   /// Chat: the Store contract reserves space once for the whole conversation; each message is
-  /// registered with Central on its own (messages are free).
+  /// registered and billed by Central on its own.
   final bool reservedBundle;
   final VoidCallback onConfirm;
   final VoidCallback onCancel;

@@ -23,6 +23,9 @@ class ChatService {
   // Cache of active contractId per conversation to avoid frequent popups
   // Key: conversationId, Value: last used contractId
   static final Map<String, String> _conversationContracts = {};
+
+  /// Per-message charge (D) the user confirmed for a conversation in this session; asked again when it changes.
+  static final Map<String, double> _confirmedMessageCharge = {};
   
   // Default bundle size (5MB) for chat messages
   static const int _chatBundleSize = 5 * 1024 * 1024;
@@ -292,7 +295,25 @@ class ChatService {
         contractId: contractId,
         socialItem: true,
         onProgress: (msg) => AppLogger.log('ChatService upload: $msg'),
+        confirmCharge: (charge) async {
+          if (_confirmedMessageCharge[conversationId] == charge) return true;
+          if (onConfirmFee == null) return false;
+          final ok = await onConfirmFee({
+            'totalFee': charge,
+            'durationDays': 365,
+            'estimatedCostPerDay': charge / 365,
+            'estimatedSize': fileData.length,
+            'perMessage': true,
+            'feeBasis': 'Each message is billed on its own. You are asked again in this conversation only if the price changes.',
+          });
+          if (ok) _confirmedMessageCharge[conversationId] = charge;
+          return ok;
+        },
       );
+      if (result['success'] != true) {
+        AppLogger.log('ChatService: Upload not done: ${result['error']}');
+        return false;
+      }
 
       final fileId = result['fileId'] as String? ?? '';
       final firstBlockId = result['firstBlockId'] as String? ?? '';

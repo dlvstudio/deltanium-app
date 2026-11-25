@@ -43,7 +43,7 @@ class FileUploadService {
     String? contractId, // 🆕 Storage Contract ID for blockchain integration
     int storageMonths = 12, // TOKENOMICS_V2 §6: prepaid storage term
     String storageContractType = 'TimeFixed', // or 'AutoRenew'
-    bool socialItem = false, // §10: chat messages etc. are never charged to the wallet
+    bool socialItem = false, // §10: reactions, comments, chat messages (free only within a social allowance, if any)
     /// Asked with Central's exact charge (D) before anything is uploaded, when the charge is above 0;
     /// return false to cancel. The charge shown is the charge registration takes.
     Future<bool> Function(double charge)? confirmCharge,

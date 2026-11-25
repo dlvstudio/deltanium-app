@@ -308,7 +308,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       estimatedSizeBytes: storageInfo['estimatedSize'] as int? ?? 0,
       feeBasis: storageInfo['feeBasis'] as String? ?? 'Storage fee calculated by node',
       itemLabel: 'message',
-      reservedBundle: true,
+      reservedBundle: storageInfo['perMessage'] != true,
       onConfirm: () => completer.complete(true),
       onCancel: () => completer.complete(false),
     );

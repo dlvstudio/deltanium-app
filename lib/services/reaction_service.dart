@@ -96,7 +96,7 @@ class ReactionService {
         );
         // Store submits StorageOperation to blockchain via contract
         if (blockOk) {
-          // Count it toward free storage (social items are never charged). Best effort, off the UI path.
+          // Pay for it (Central bills social items like any item once the monthly social allowance is used). Off the UI path.
           WalletService.registerStorageAt(
             nodeEndpoint: nodeEndpoint,
             fileId: effectiveFileId,
@@ -358,8 +358,8 @@ class ReactionService {
       final startDate = now.millisecondsSinceEpoch ~/ 1000;
       final endDate = now.add(Duration(days: durationDays)).millisecondsSinceEpoch ~/ 1000;
 
-      // What Central takes for this social item (0 within the monthly allowance; social items up to ~55 KB
-      // are otherwise billed the 1 D minimum whatever their exact size). The Store records it as the contract fee.
+      // What Central takes for this social item (0 within the monthly social allowance, if the network has one;
+      // otherwise items up to ~55 KB are billed the 1 D minimum whatever their exact size). Recorded as the contract fee.
       final charge = await WalletService.quoteCharge(
         sizeBytes: estimatedSize,
         storeNodes: 1,
