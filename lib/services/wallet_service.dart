@@ -218,6 +218,9 @@ class WalletService {
   /// The signed-in user's own top-up orders (newest first) and the receiving bank account.
   static Future<WalletResult> myTopUps() => _call('GET', '/api/wallet/topups');
 
+  /// D movements into and out of the signed-in wallet, newest first (Central caps [limit] at 200).
+  static Future<WalletResult> ledger({int limit = 200}) => _call('GET', '/api/wallet/ledger?limit=$limit');
+
   // ---------- redemption (KYC-verified creators / node operators) ----------
 
   static Future<WalletResult> redeem(double amountD) => _call('POST', '/api/wallet/redeem', json: {'amount': amountD});

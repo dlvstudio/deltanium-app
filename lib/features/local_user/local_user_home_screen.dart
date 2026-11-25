@@ -393,6 +393,9 @@ class _LocalUserHomeScreenState extends State<LocalUserHomeScreen>
       case 3:
         context.go(AppRoutes.messages);
         break;
+      case 4:
+        context.go(AppRoutes.transactions);
+        break;
     }
   }
 }

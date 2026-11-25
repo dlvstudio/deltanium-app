@@ -70,6 +70,9 @@ class _SearchScreenState extends State<SearchScreen> with TickerProviderStateMix
       case 3:
         context.go(AppRoutes.messages);
         break;
+      case 4:
+        context.go(AppRoutes.transactions);
+        break;
     }
   }
   

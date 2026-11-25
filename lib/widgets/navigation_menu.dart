@@ -113,6 +113,14 @@ class _NavigationMenuState extends State<NavigationMenu> {
       ),
       _buildMenuItem(
         context,
+        icon: Icons.receipt_long_outlined,
+        selectedIcon: Icons.receipt_long_rounded,
+        label: 'Transactions',
+        index: 4,
+        route: AppRoutes.transactions,
+      ),
+      _buildMenuItem(
+        context,
         icon: Icons.person_outline_rounded,
         selectedIcon: Icons.person_rounded,
         label: 'Profile',

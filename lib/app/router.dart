@@ -8,6 +8,7 @@ import 'package:deltanium_app/features/settings/screens/settings_screen.dart';
 import 'package:deltanium_app/features/search/screens/search_screen.dart';
 import 'package:deltanium_app/features/notifications/screens/notifications_screen.dart';
 import 'package:deltanium_app/features/messages/screens/messages_screen.dart';
+import 'package:deltanium_app/features/wallet/transactions_screen.dart';
 import 'package:deltanium_app/features/messages/screens/chat_conversation_screen.dart';
 import 'package:deltanium_app/features/create_post/screens/create_post_screen.dart';
 import 'package:deltanium_app/features/local_user/local_user_home_screen.dart';
@@ -33,6 +34,7 @@ class AppRoutes {
   static const String search = '/search';
   static const String notifications = '/notifications';
   static const String messages = '/messages';
+  static const String transactions = '/transactions';
   static const String chatConversation = '/messages/chat';
   static const String createPost = '/create-post';
   static const String localUserHome = '/app';
@@ -137,6 +139,7 @@ Future<GoRouter> configureRouter() async {
         AppRoutes.secureFileUpload,
         AppRoutes.messages,
         AppRoutes.chatConversation,
+        AppRoutes.transactions,
       ];
       
       if (protectedRoutes.contains(state.matchedLocation)) {
@@ -270,6 +273,13 @@ Future<GoRouter> configureRouter() async {
         builder: (context, state) => const NotificationsScreen(),
       ),
       
+      // Wallet transactions route
+      GoRoute(
+        path: AppRoutes.transactions,
+        name: 'transactions',
+        builder: (context, state) => const TransactionsScreen(),
+      ),
+
       // Messages route
       GoRoute(
         path: AppRoutes.messages,
