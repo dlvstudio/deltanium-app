@@ -11,6 +11,7 @@ import 'package:deltanium_app/services/crypto_service.dart';
 import 'package:deltanium_app/services/file_crypto_service.dart';
 import 'package:deltanium_app/services/app_logger.dart';
 import 'package:deltanium_app/services/wallet_service.dart';
+import 'package:deltanium_app/utils/d_format.dart';
 
 // Removed pointycastle import - using WebCrypto for consistency
 
@@ -43,6 +44,12 @@ class FileUploadService {
     int storageMonths = 12, // TOKENOMICS_V2 §6: prepaid storage term
     String storageContractType = 'TimeFixed', // or 'AutoRenew'
     bool socialItem = false, // §10: chat messages etc. are never charged to the wallet
+    /// Asked with Central's exact charge (D) before anything is uploaded, when the charge is above 0;
+    /// return false to cancel. The charge shown is the charge registration takes.
+    Future<bool> Function(double charge)? confirmCharge,
+    /// Upload but do not register (pay) yet: the result carries `pendingRegistration` for
+    /// [registerPending], so a caller can confirm one total for several items first.
+    bool deferRegistration = false,
   }) async {
     try {
       // Step 1: Initial setup
@@ -158,20 +165,24 @@ class FileUploadService {
         targetNodes.removeLast();
       }
 
-      // TOKENOMICS_V2 §6/§10: price the storage before uploading anything; stop early if unaffordable.
-      final quoteResp = await WalletService.quoteStorage(
-        sizeBytes: fileData.length,
-        replicas: targetNodes.length,
-        months: storageMonths,
-        owner: CryptoService.normalizePublicKey(publicKey),
-      );
-      final quote = quoteResp?['quote'] as Map<String, dynamic>?;
-      if (quoteResp?['enforceFees'] == true && quote != null && quote['freeTier'] != true) {
-        final total = (quote['totalFee'] as num?)?.toDouble() ?? 0;
-        final balance = await WalletService.getBalance() ?? 0;
-        if (balance < total) {
-          throw Exception('Storage costs ${total.toStringAsFixed(0)} D but your balance is '
-              '${balance.toStringAsFixed(0)} D. Top up your wallet first.');
+      // TOKENOMICS_V2 §6/§10: the exact charge registration will take (same size, Stores and kind); stop early
+      // if it is unaffordable or the user declines it.
+      if (!deferRegistration) {
+        final charge = await WalletService.quoteCharge(
+          sizeBytes: fileData.length,
+          storeNodes: targetNodes.length,
+          social: socialItem,
+          months: storageMonths,
+        );
+        if (charge != null && charge > 0) {
+          final balance = await WalletService.getBalance() ?? 0;
+          if (balance < charge) {
+            throw Exception('Storage costs ${DFormat.exact(charge)} but your balance is '
+                '${DFormat.exact(balance)}. Top up your wallet first.');
+          }
+          if (confirmCharge != null && !await confirmCharge(charge)) {
+            throw StorageChargeDeclined();
+          }
         }
       }
 
@@ -269,7 +280,20 @@ class FileUploadService {
 
       onProgress?.call('Finalizing...');
       Map<String, dynamic>? storage;
-      if (placedNodeIds.isNotEmpty) {
+      Map<String, dynamic>? pendingRegistration;
+      if (placedNodeIds.isNotEmpty && deferRegistration) {
+        pendingRegistration = {
+          'fileId': fileId,
+          'publicKey': publicKey,
+          'storeNodeIds': placedNodeIds,
+          'fileSize': fileData.length,
+          'fileHash': fileHash ?? '',
+          'months': storageMonths,
+          'contractType': storageContractType,
+          'blocks': blockHashes,
+          'social': socialItem,
+        };
+      } else if (placedNodeIds.isNotEmpty) {
         final reg = await _registerReplicasWithAPI(
           fileId: fileId,
           publicKey: publicKey,
@@ -320,6 +344,7 @@ class FileUploadService {
         'blockchainSubmitted': blockchainSubmitted,
         'blockchainSubmitErrors': blockchainSubmitErrors,
         'storage': storage,
+        if (pendingRegistration != null) 'pendingRegistration': pendingRegistration,
       };
     } catch (e) {
       AppLogger.log('Error in encrypted file upload: $e');
@@ -327,6 +352,7 @@ class FileUploadService {
       return {
         'success': false,
         'error': e.toString(),
+        if (e is StorageChargeDeclined) 'cancelled': true,
       };
     }
   }
@@ -534,6 +560,22 @@ class FileUploadService {
   }
   
   /// Register N-of-M placements with Central (signed).
+  /// Pays for an upload made with `deferRegistration: true` (its `pendingRegistration`). Returns
+  /// `{ok, status, error?, storage?}`; status 402 means the wallet could not pay.
+  Future<Map<String, dynamic>> registerPending(Map<String, dynamic> pending, {required String mnemonic}) =>
+      _registerReplicasWithAPI(
+        fileId: pending['fileId'] as String,
+        publicKey: pending['publicKey'] as String,
+        mnemonic: mnemonic,
+        storeNodeIds: (pending['storeNodeIds'] as List).cast<String>(),
+        fileSize: pending['fileSize'] as int,
+        fileHash: pending['fileHash'] as String? ?? '',
+        months: pending['months'] as int? ?? 12,
+        contractType: pending['contractType'] as String? ?? 'TimeFixed',
+        blocks: (pending['blocks'] as List).cast<Map<String, Object>>(),
+        social: pending['social'] as bool? ?? false,
+      );
+
   Future<Map<String, dynamic>> _registerReplicasWithAPI({
     required String fileId,
     required String publicKey,
@@ -640,4 +682,10 @@ class FileUploadService {
         ? fileName.split('.').last
         : '';
   }
-} 
+}
+
+/// The user declined the storage charge shown before upload; nothing was uploaded or paid.
+class StorageChargeDeclined implements Exception {
+  @override
+  String toString() => 'Upload cancelled: storage fee not confirmed';
+}

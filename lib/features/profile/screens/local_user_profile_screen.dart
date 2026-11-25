@@ -372,7 +372,7 @@ class _LocalUserProfileScreenState extends State<LocalUserProfileScreen> {
             style: style,
           ),
           Text(
-            'Reads this month: ${_mb(egress?['bytes'])} · over-quota charged ${DFormat.d((egress?['chargedD'] as num?) ?? 0)}',
+            'Reads this month: ${_mb(egress?['bytes'])} · over-quota charged ${DFormat.exact((egress?['chargedD'] as num?) ?? 0)}',
             style: style,
           ),
           if (plan != null && plan['active'] == true)
@@ -1120,7 +1120,7 @@ class _LocalUserProfileScreenState extends State<LocalUserProfileScreen> {
                       Text(
                         _walletLoading
                             ? 'Loading…'
-                            : DFormat.full(_dBalance ?? 0),
+                            : DFormat.exact(_dBalance ?? 0),
                         style: GoogleFonts.syne(
                           fontSize: 28,
                           fontWeight: FontWeight.w800,

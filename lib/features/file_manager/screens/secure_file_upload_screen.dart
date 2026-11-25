@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
+import 'package:deltanium_app/widgets/confirm_storage_cost_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
@@ -209,6 +210,9 @@ class _SecureFileUploadScreenState extends State<SecureFileUploadScreen> {
           mnemonic: _userMnemonic!,
           sharedWithUsers: _sharedWithUsers.isNotEmpty ? _sharedWithUsers : null,
           selectedNode: _selectedNode!,
+          confirmCharge: (charge) => mounted
+              ? confirmStorageCharge(context, fileName: fileName, sizeBytes: fileBytes.length, charge: charge)
+              : Future.value(false),
         );
         
         if (result['success'] == true) {

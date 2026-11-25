@@ -115,8 +115,9 @@ class PostPublisher {
       final replicaNodes = selectedNodes.length > 1 ? selectedNodes.sublist(1) : <Map<String, dynamic>>[];
       AppLogger.log('PostPublisher: ${selectedNodes.length} store node(s); primary=${node['endpoint']}');
 
-      // 1. Attached files, each on N Stores.
+      // 1. Attached files, each on N Stores. They are paid only after the user confirms the total (step 3).
       final uploadedMedia = <Map<String, dynamic>>[];
+      final pendingMedia = <({String name, Map<String, dynamic> pending})>[];
       for (final m in r.media) {
         try {
           final up = await _uploadMedia(m, node, replicaNodes, r);
@@ -131,7 +132,8 @@ class PostPublisher {
             'extension': m.extension,
             'encryptedKey': up['encryptedKey'],
           });
-          await _registerFileWithApi(fileId: up['fileId'] as String, fileName: m.name, fileType: m.type, nodeId: node['id'].toString());
+          final pending = up['pendingRegistration'] as Map<String, dynamic>?;
+          if (pending != null) pendingMedia.add((name: m.name, pending: pending));
         } catch (e) {
           // One failed attachment does not stop the post (as before).
           AppLogger.log('PostPublisher: attachment ${m.name} failed: $e');
@@ -172,8 +174,32 @@ class PostPublisher {
         onProgress: onProgress,
       );
 
-      // 3. Storage quote and contract with the primary Store.
+      // 3. Storage cost: Central's exact charge for each attachment and the post (the same inputs registration
+      // sends), shown once as a total; the Store contract records the post's charge, so the fee on chain is the fee paid.
       _progress('Calculating storage cost...');
+      final metadataEntries = postResult['metadataEntries'] as List<Map<String, dynamic>>;
+      final postBlocks = postResult['blocks'] as List<Map<String, dynamic>>;
+      final postFileId = postResult['fileId'] as String;
+      final lines = <StorageChargeItem>[];
+      for (final m in pendingMedia) {
+        final p = m.pending;
+        final c = await WalletService.quoteCharge(
+          sizeBytes: p['fileSize'] as int,
+          storeNodes: (p['storeNodeIds'] as List).length,
+          months: p['months'] as int? ?? 12,
+        );
+        if (c == null) throw Exception('Could not get the storage price from Central. Try again.');
+        lines.add(StorageChargeItem(m.name, p['fileSize'] as int, c));
+      }
+      final postSize = postStoredBytes(metadataEntries, postBlocks, contractIdLength: 32, shareType: r.shareType);
+      final postCharge = await WalletService.quoteCharge(
+        sizeBytes: postSize,
+        storeNodes: 1,
+        replicas: AppConstants.replicationFactor,
+      );
+      if (postCharge == null) throw Exception('Could not get the storage price from Central. Try again.');
+      lines.add(StorageChargeItem('Post', postSize, postCharge));
+
       final storageInfo = await PostService.preparePostUploadWithStorageCost(
         postResult: postResult,
         storeBaseUrl: node['endpoint'],
@@ -181,8 +207,13 @@ class PostPublisher {
         storageNodePublicKey: node['publicKey'] ?? '',
         userMnemonic: mnemonic,
         onProgress: onProgress,
+        centralCharge: postCharge,
       );
       if (storageInfo['success'] != true) throw Exception(storageInfo['error'] ?? 'Failed to calculate storage cost');
+      storageInfo['totalFee'] = StorageChargeItem.total(lines);
+      storageInfo['estimatedSize'] = lines.fold<int>(0, (a, l) => a + l.sizeBytes);
+      storageInfo['breakdown'] = lines;
+      storageInfo['feeBasis'] = '';
       _progress('Awaiting fee confirmation...');
       if (!await confirmStorage(storageInfo)) throw PostPublishCancelled();
 
@@ -191,9 +222,6 @@ class PostPublisher {
       if (contractId.isEmpty) throw Exception('Missing contractId from storage proposal');
       await _signStorageContract(storeBaseUrl: node['endpoint'] as String, contractId: contractId);
 
-      final metadataEntries = postResult['metadataEntries'] as List<Map<String, dynamic>>;
-      final postBlocks = postResult['blocks'] as List<Map<String, dynamic>>;
-      final postFileId = postResult['fileId'] as String;
       for (final entry in metadataEntries) {
         entry['contractId'] = contractId;
         entry['type'] ??= 'post';
@@ -203,10 +231,23 @@ class PostPublisher {
       // 4. Pay before anything reaches the Store: it submits the post to the chain once it has the metadata,
       // so a short balance must stop the post here (402). Central copies it to more Stores later.
       _progress('Paying for storage...');
+      final paidPostSize = WalletService.storedBytes(metadataEntries, postBlocks);
+      if (paidPostSize != postSize) {
+        // Never charge something other than what was shown.
+        final again = await WalletService.quoteCharge(
+            sizeBytes: paidPostSize, storeNodes: 1, replicas: AppConstants.replicationFactor);
+        if (again != postCharge) throw Exception('The storage price changed while posting. Nothing was charged; try again.');
+      }
+      final uploader = FileUploadService();
+      for (final m in pendingMedia) {
+        final reg = await uploader.registerPending(m.pending, mnemonic: mnemonic);
+        if (reg['status'] == 402) throw Exception('Not enough D to store ${m.name}: ${reg['error']}');
+        if (reg['ok'] != true) AppLogger.log('Storage registration for ${m.name} failed (${reg['status']}): ${reg['error']}');
+      }
       final storageReg = await WalletService.registerStorage(
         fileId: postFileId,
         storeNodeIds: [node['id'].toString()],
-        sizeBytes: WalletService.storedBytes(metadataEntries, postBlocks),
+        sizeBytes: paidPostSize,
         blocks: WalletService.blockHashes(postBlocks),
       );
       if (storageReg.status == 402) throw Exception('Not enough D to store this post: ${storageReg.error}');
@@ -295,6 +336,7 @@ class PostPublisher {
       policyTag: r.preTag,
       capsuleFor: r.preTag != null ? 'tag' : null,
       policyScheme: r.preTag != null ? PreKeys.schemeFor(r.preTag!) : null,
+      deferRegistration: true,
     );
     if (up['success'] != true) throw Exception('FileUploadService failed: ${up['error']}');
     if (up['blockchainSubmitted'] == false) {
@@ -363,29 +405,36 @@ class PostPublisher {
     }
   }
 
-  Future<void> _registerFileWithApi({
-    required String fileId,
-    required String fileName,
-    required String fileType,
-    required String nodeId,
-  }) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$apiBaseUrl/storedfile/register'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'fileId': fileId,
-          'ownerPublicKey': CryptoService.convertToCompressedPublicKey(publicKey),
-          'storeNodeId': nodeId,
-          'fileName': fileName,
-          'fileType': fileType,
-          'fileSize': 0,
-          'createdAt': DateTime.now().toUtc().toIso8601String(),
-        }),
-      );
-      if (response.statusCode != 200) AppLogger.log('Warning: Failed to register file with API: ${response.statusCode}');
-    } catch (e) {
-      AppLogger.log('Warning: Error registering file: $e'); // non-fatal: the file is already on the Store
-    }
-  }
+}
+
+/// One item of an upload's storage charge: what Central takes for it (D, whole 0.0001 D).
+class StorageChargeItem {
+  final String label;
+  final int sizeBytes;
+  final double charge;
+  const StorageChargeItem(this.label, this.sizeBytes, this.charge);
+
+  /// Sum in 0.0001 D steps, so floating point never adds or drops a fraction of what is shown.
+  static double total(List<StorageChargeItem> items) =>
+      items.fold<int>(0, (a, l) => a + (l.charge * 10000).round()) / 10000;
+}
+
+/// Bytes Central bills for a post, the way [WalletService.storedBytes] counts them once each metadata entry
+/// carries its contractId (a [contractIdLength]-character id from the Store), type and shareType.
+int postStoredBytes(
+  List<Map<String, dynamic>> metadataEntries,
+  List<Map<String, dynamic>> blocks, {
+  required int contractIdLength,
+  required String shareType,
+}) {
+  final entries = [
+    for (final e in metadataEntries)
+      {
+        ...e,
+        'contractId': 'x' * contractIdLength,
+        'type': e['type'] ?? 'post',
+        'shareType': e['shareType'] ?? shareType,
+      }
+  ];
+  return WalletService.storedBytes(entries, blocks);
 }

@@ -5,6 +5,7 @@ import 'package:deltanium_app/services/crypto_service.dart';
 import 'package:deltanium_app/services/file_crypto_service.dart';
 import 'package:deltanium_app/services/request_signer.dart';
 import 'package:deltanium_app/services/storage_contract_service.dart';
+import 'package:deltanium_app/config/constants.dart';
 import 'package:deltanium_app/services/wallet_service.dart';
 import 'package:http/http.dart' as http;
 
@@ -357,12 +358,21 @@ class ReactionService {
       final startDate = now.millisecondsSinceEpoch ~/ 1000;
       final endDate = now.add(Duration(days: durationDays)).millisecondsSinceEpoch ~/ 1000;
 
+      // What Central takes for this social item (0 within the monthly allowance; social items up to ~55 KB
+      // are otherwise billed the 1 D minimum whatever their exact size). The Store records it as the contract fee.
+      final charge = await WalletService.quoteCharge(
+        sizeBytes: estimatedSize,
+        storeNodes: 1,
+        replicas: AppConstants.replicationFactor,
+        social: true,
+      );
       final body = jsonEncode({
         'contractType': 'TimeFixed',
         'startDateUnix': startDate,
         'endDateUnix': endDate,
         'totalFileSize': estimatedSize,
         'fileIds': [effectiveFileId],
+        if (charge != null) 'centralCharge': charge,
       });
 
       final signature = await signer.signRequest(

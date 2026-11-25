@@ -28,6 +28,8 @@ class StorageContractService {
     required List<String> fileIds,
     required String appPublicKey,
     required String storageNodePublicKey,
+    /// Central's charge for what this contract covers; recorded as the contract fee when given.
+    double? centralCharge,
   }) async {
     try {
       final request = {
@@ -36,6 +38,7 @@ class StorageContractService {
         'endDateUnix': endDate,
         'totalFileSize': totalFileSize,
         'fileIds': fileIds,
+        if (centralCharge != null) 'centralCharge': centralCharge,
       };
 
       final bodyBytes = utf8.encode(jsonEncode(request));
@@ -75,7 +78,7 @@ class StorageContractService {
           createdAtUnix: DateTime.now().millisecondsSinceEpoch ~/ 1000,
           status: data['status'] ?? 'PendingAppApproval',
         );
-        AppLogger.log('Contract created with fee: ${contract.totalFee} DLT (${data['feeBasis']})');
+        AppLogger.log('Contract created with fee: ${contract.totalFee} D (${data['feeBasis']})');
         return contract;
       } else {
         AppLogger.log('Failed to create contract: ${response.statusCode} - ${response.body}');

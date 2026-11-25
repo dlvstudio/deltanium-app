@@ -403,7 +403,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       durationDays: storageInfo['durationDays'] as int? ?? 0,
       costPerDay: (storageInfo['estimatedCostPerDay'] as num?)?.toDouble() ?? 0.0,
       estimatedSizeBytes: storageInfo['estimatedSize'] as int? ?? 0,
-      feeBasis: storageInfo['feeBasis'] as String? ?? 'Storage fee calculated by node',
+      feeBasis: storageInfo['feeBasis'] as String? ?? '',
+      breakdown: [
+        for (final l in (storageInfo['breakdown'] as List<StorageChargeItem>? ?? const []))
+          (label: l.label, charge: l.charge),
+      ],
       onConfirm: () => completer.complete(true),
       onCancel: () => completer.complete(false),
     );

@@ -234,6 +234,8 @@ class PostService {
     required String userMnemonic,
     int durationDays = 365, // Default 1 year storage
     Function(String)? onProgress,
+    /// Central's exact charge for the post; the Store records it as the contract fee (the fee put on chain).
+    double? centralCharge,
   }) async {
     AppLogger.log('PostService: Preparing post upload with storage cost...');
     onProgress?.call('Calculating storage cost...');
@@ -284,6 +286,7 @@ class PostService {
         appPublicKey: appPublicKey,
         storageNodePublicKey: storageNodePublicKey,
         userMnemonic: userMnemonic,
+        centralCharge: centralCharge,
       );
 
       if (!contractResponse['success']) {
@@ -403,6 +406,7 @@ class PostService {
     required String appPublicKey,
     required String storageNodePublicKey,
     required String userMnemonic,
+    double? centralCharge,
   }) async {
     try {
       final signer = RequestSigner(
@@ -415,6 +419,7 @@ class PostService {
         'endDateUnix': endDateUnix,
         'totalFileSize': totalFileSize,
         'fileIds': fileIds,
+        if (centralCharge != null) 'centralCharge': centralCharge,
       });
       final signature = await signer.signRequest(
         'POST',

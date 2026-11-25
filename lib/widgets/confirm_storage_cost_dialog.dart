@@ -1,13 +1,42 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:deltanium_app/services/app_logger.dart';
 import 'package:deltanium_app/services/wallet_service.dart';
 import 'package:deltanium_app/utils/d_format.dart';
 
-/// Dialog to confirm storage before uploading a post, reaction, comment or message.
+/// One line of what an upload costs, e.g. ("Image photo.png", 37.3028).
+typedef StorageChargeLine = ({String label, double charge});
+
+/// Asks the user to confirm Central's exact [charge] for one uploaded file; true when confirmed.
+Future<bool> confirmStorageCharge(
+  BuildContext context, {
+  required String fileName,
+  required int sizeBytes,
+  required double charge,
+  String itemLabel = 'file',
+}) {
+  final completer = Completer<bool>();
+  ConfirmStorageCostDialog.show(
+    context: context,
+    totalFee: charge,
+    durationDays: 365,
+    costPerDay: charge / 365,
+    estimatedSizeBytes: sizeBytes,
+    feeBasis: '',
+    itemLabel: itemLabel,
+    breakdown: [(label: fileName, charge: charge)],
+    onConfirm: () => completer.complete(true),
+    onCancel: () => completer.complete(false),
+  );
+  return completer.future;
+}
+
+/// Confirms what an upload (post, attachments, reaction, comment, message, file) takes from the wallet.
 ///
-/// The store node quotes a contract fee (in D). What the wallet is actually charged is decided by
-/// Central: uploads inside the free tier cost nothing, beyond it they are billed as paid storage.
-/// The dialog reads `/api/wallet/usage` and says which case applies instead of always claiming a deduction.
+/// [totalFee] is Central's exact charge (`GET /api/storedfile/quote` → `charge`, whole 0.0001 D) for everything
+/// this upload registers, the same amount registration then deducts. The dialog shows it to 4 decimals, so the
+/// D shown is the D paid; it never shows a Store's own quote. Upload is blocked when the balance is short.
 class ConfirmStorageCostDialog extends StatefulWidget {
   final double totalFee;
   final int durationDays;
@@ -16,8 +45,11 @@ class ConfirmStorageCostDialog extends StatefulWidget {
   final String feeBasis;
   final String itemLabel;
 
+  /// Per-item charges summing to [totalFee] (a post with attachments); empty shows the total only.
+  final List<StorageChargeLine> breakdown;
+
   /// Chat: the Store contract reserves space once for the whole conversation; each message is
-  /// registered (and counted toward free storage) with its own size.
+  /// registered with Central on its own (messages are free).
   final bool reservedBundle;
   final VoidCallback onConfirm;
   final VoidCallback onCancel;
@@ -33,12 +65,12 @@ class ConfirmStorageCostDialog extends StatefulWidget {
     required this.onCancel,
     this.itemLabel = 'post',
     this.reservedBundle = false,
+    this.breakdown = const [],
   }) : super(key: key);
 
   @override
   State<ConfirmStorageCostDialog> createState() => _ConfirmStorageCostDialogState();
 
-  /// Static method to show the dialog
   static void show({
     required BuildContext context,
     required double totalFee,
@@ -50,32 +82,30 @@ class ConfirmStorageCostDialog extends StatefulWidget {
     VoidCallback? onCancel,
     String itemLabel = 'post',
     bool reservedBundle = false,
+    List<StorageChargeLine> breakdown = const [],
   }) {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder:
-          (context) => ConfirmStorageCostDialog(
-            totalFee: totalFee,
-            durationDays: durationDays,
-            costPerDay: costPerDay,
-            estimatedSizeBytes: estimatedSizeBytes,
-            feeBasis: feeBasis,
-            itemLabel: itemLabel,
-            reservedBundle: reservedBundle,
-            onConfirm: onConfirm,
-            onCancel: onCancel ?? () {},
-          ),
+      builder: (context) => ConfirmStorageCostDialog(
+        totalFee: totalFee,
+        durationDays: durationDays,
+        costPerDay: costPerDay,
+        estimatedSizeBytes: estimatedSizeBytes,
+        feeBasis: feeBasis,
+        itemLabel: itemLabel,
+        reservedBundle: reservedBundle,
+        breakdown: breakdown,
+        onConfirm: onConfirm,
+        onCancel: onCancel ?? () {},
+      ),
     );
   }
 }
 
 class _ConfirmStorageCostDialogState extends State<ConfirmStorageCostDialog> {
-  Map<String, dynamic>? _usage;
-  bool _usageLoaded = false;
-
-  /// Central's price for a post that is not covered by the free tier (`/api/storedfile/quote`).
-  Map<String, dynamic>? _quote;
+  double? _balance;
+  bool _loaded = false;
 
   @override
   void initState() {
@@ -84,40 +114,18 @@ class _ConfirmStorageCostDialogState extends State<ConfirmStorageCostDialog> {
   }
 
   Future<void> _load() async {
-    Map<String, dynamic>? usage;
-    Map<String, dynamic>? quote;
+    double? balance;
     try {
-      usage = await WalletService.getUsage();
-      if (widget.itemLabel == 'post' && !_coveredByFreeTier(usage)) {
-        // Price it before uploading, so a post the wallet cannot pay for is never uploaded.
-        quote = await WalletService.quoteStorage(sizeBytes: widget.estimatedSizeBytes, replicas: 1);
-      }
+      if (widget.totalFee > 0) balance = await WalletService.getBalance();
     } catch (_) {}
     if (!mounted) return;
     setState(() {
-      _usage = usage;
-      _quote = quote;
-      _usageLoaded = true;
+      _balance = balance;
+      _loaded = true;
     });
   }
 
-  bool _coveredByFreeTier(Map<String, dynamic>? usage) {
-    final free = usage?['freeTier'] as Map<String, dynamic>?;
-    if (free == null || free['eligible'] != true) return false;
-    final used = (free['storageUsedBytes'] as num?) ?? 0;
-    final quota = (free['storageQuotaBytes'] as num?) ?? 0;
-    return used + widget.estimatedSizeBytes <= quota;
-  }
-
-  /// Central bills this upload and the wallet cannot pay it: block the upload.
-  String? get _blockedReason {
-    if (_quote == null || _quote!['enforceFees'] != true) return null;
-    final total = ((_quote!['quote'] as Map<String, dynamic>?)?['totalFee'] as num?)?.toDouble() ?? 0;
-    final balance = (_usage?['balance'] as num?)?.toDouble() ?? 0;
-    if (balance >= total) return null;
-    return 'This post needs ${DFormat.full(total)} of paid storage and your balance is ${DFormat.full(balance)}. '
-        'Top up from your profile first.';
-  }
+  bool get _short => widget.totalFee > 0 && _balance != null && _balance! < widget.totalFee;
 
   String _formatSize(num bytes) {
     if (bytes < 1024) return '${bytes.round()} B';
@@ -126,55 +134,26 @@ class _ConfirmStorageCostDialogState extends State<ConfirmStorageCostDialog> {
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
   }
 
-  /// The Store quotes its contract fee in D (1 D = 1 VND; minimum 10 D per contract), not DLT.
-  String _formatFee(double fee) => fee >= 1 ? DFormat.full(fee) : '${fee.toStringAsFixed(4)} D';
-
-  /// (covered by free tier?, note to show)
-  (bool, String) _walletNote() {
-    if (!_usageLoaded) return (false, 'Checking your free storage…');
-    if (widget.reservedBundle) {
+  (bool ok, String note) _note() {
+    if (widget.totalFee <= 0) {
+      return (true, 'Free: nothing is deducted from your wallet.');
+    }
+    if (!_loaded) return (false, 'Checking your balance…');
+    final total = DFormat.exact(widget.totalFee);
+    if (_short) {
       return (
-        true,
-        'Free: ${widget.itemLabel}s are never charged to your wallet.',
+        false,
+        'This needs $total and your balance is ${DFormat.exact(_balance!)}. Top up from your profile first.',
       );
     }
-    final free = _usage?['freeTier'] as Map<String, dynamic>?;
-    if (_coveredByFreeTier(_usage)) {
-      final used = (free?['storageUsedBytes'] as num?) ?? 0;
-      final quota = (free?['storageQuotaBytes'] as num?) ?? 0;
-      return (
-        true,
-        'Covered by your free storage (${_formatSize(used)} of ${_formatSize(quota)} used). '
-            'Nothing is deducted from your wallet.',
-      );
-    }
-    if (widget.itemLabel != 'post') {
-      // §10: reactions, comments and messages are free even beyond the free storage quota.
-      return (true, 'Free: ${widget.itemLabel}s are never charged to your wallet.');
-    }
-    final blocked = _blockedReason;
-    if (blocked != null) return (false, blocked);
-    // With no free storage on the network (quota 0) every post is plain paid storage.
-    final hasFree = ((free?['storageQuotaBytes'] as num?) ?? 0) > 0;
-    final lead = hasFree ? 'Beyond your free storage' : 'Storage fee';
-    if (_quote != null && _quote!['enforceFees'] != true) {
-      return (true, '$lead: storage fees are not charged on this network yet.');
-    }
-    final total = ((_quote?['quote'] as Map<String, dynamic>?)?['totalFee'] as num?)?.toDouble();
-    if (total != null) {
-      return (false, '$lead: ${DFormat.full(total)} is deducted from your wallet for paid storage.');
-    }
-    final price = (_usage?['storage'] as Map<String, dynamic>?)?['pricePerGbMonth'] ?? 800;
-    return (
-      false,
-      '$lead: billed from your wallet as paid storage ($price D/GB/month per replica).',
-    );
+    final after = _balance == null ? '' : ' Balance after: ${DFormat.exact(_balance! - widget.totalFee)}.';
+    return (false, 'Exactly $total is deducted from your wallet when you confirm.$after');
   }
 
   @override
   Widget build(BuildContext context) {
-    final (covered, note) = _walletNote();
-    final accent = covered ? Colors.green : Colors.orange;
+    final (free, note) = _note();
+    final accent = free ? Colors.green : (_short ? Colors.red : Colors.orange);
     return AlertDialog(
       title: const Text('Confirm storage'),
       content: SingleChildScrollView(
@@ -189,12 +168,11 @@ class _ConfirmStorageCostDialogState extends State<ConfirmStorageCostDialog> {
               style: const TextStyle(fontSize: 14),
             ),
             const SizedBox(height: 16),
-            _buildDetailRow('Storage duration:', '${widget.durationDays} days'),
-            _buildDetailRow(
-              widget.reservedBundle ? 'Reserved space:' : 'Estimated size:',
-              _formatSize(widget.estimatedSizeBytes),
-            ),
-            _buildDetailRow('Node quote:', _formatFee(widget.totalFee)),
+            _row('Storage duration:', '${widget.durationDays} days'),
+            if (widget.estimatedSizeBytes > 0)
+              _row(widget.reservedBundle ? 'Reserved space:' : 'Size:', _formatSize(widget.estimatedSizeBytes)),
+            for (final l in widget.breakdown) _row(l.label, DFormat.exact(l.charge)),
+            _row('You pay:', DFormat.exact(widget.totalFee), bold: true),
             if (widget.feeBasis.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 2),
@@ -226,13 +204,13 @@ class _ConfirmStorageCostDialogState extends State<ConfirmStorageCostDialog> {
           child: const Text('Cancel', style: TextStyle(color: Colors.red)),
         ),
         ElevatedButton(
-          onPressed: !_usageLoaded || _blockedReason != null
+          onPressed: (widget.totalFee > 0 && !_loaded) || _short
               ? null
               : () {
-            AppLogger.log('User confirmed storage (${widget.itemLabel}): node quote ${widget.totalFee} D');
-            widget.onConfirm();
-            Navigator.of(context).pop();
-          },
+                  AppLogger.log('User confirmed storage (${widget.itemLabel}): ${widget.totalFee} D');
+                  widget.onConfirm();
+                  Navigator.of(context).pop();
+                },
           style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
           child: const Text('Confirm & upload', style: TextStyle(color: Colors.white)),
         ),
@@ -240,14 +218,15 @@ class _ConfirmStorageCostDialogState extends State<ConfirmStorageCostDialog> {
     );
   }
 
-  Widget _buildDetailRow(String label, String value) {
+  Widget _row(String label, String value, {bool bold = false}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(fontSize: 13, color: Colors.grey)),
-          Text(value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+          Flexible(child: Text(label, style: const TextStyle(fontSize: 13, color: Colors.grey))),
+          const SizedBox(width: 12),
+          Text(value, style: TextStyle(fontSize: 13, fontWeight: bold ? FontWeight.w800 : FontWeight.w500)),
         ],
       ),
     );

@@ -232,6 +232,27 @@ class WalletService {
   static Future<WalletResult> setEgressCap(double maxDPerMonth) =>
       _call('POST', '/api/wallet/egress-cap', json: {'maxDPerMonth': maxDPerMonth});
 
+  /// Exactly the D that registering an item will take from the signed-in wallet (Central's `charge`), using the
+  /// same inputs registration will send: [sizeBytes], the number of Stores it goes to, the paid [replicas]
+  /// (registerStorage sends AppConstants.replicationFactor; file uploads send none, i.e. 0) and [social].
+  /// 0 when fees are not enforced. Null when Central could not be asked.
+  static Future<double?> quoteCharge({
+    required int sizeBytes,
+    required int storeNodes,
+    int replicas = 0,
+    bool social = false,
+    int months = 12,
+  }) async {
+    if (sizeBytes <= 0) return 0;
+    final auth = await _auth();
+    final owner = auth == null ? null : CryptoService.normalizePublicKey(auth['publicKey']!);
+    final q = 'sizeBytes=$sizeBytes&replicas=$replicas&months=$months&storeNodes=$storeNodes'
+        '${social ? '&kind=social' : ''}${owner != null ? '&owner=${Uri.encodeQueryComponent(owner)}' : ''}';
+    final m = (await _call('GET', '/api/storedfile/quote?$q', signed: false)).map;
+    final c = m?['charge'];
+    return c is num ? c.toDouble() : null;
+  }
+
   static Future<Map<String, dynamic>?> quoteStorage({
     required int sizeBytes,
     int replicas = 2,

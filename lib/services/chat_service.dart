@@ -216,6 +216,8 @@ class ChatService {
           fileIds: [], // Empty means covers any file
           appPublicKey: pubKey,
           storageNodePublicKey: selectedNode['publicKey']?.toString() ?? selectedNode['PublicKey']?.toString() ?? '',
+          // Central bills each message on its own (social items: free), never the bundle.
+          centralCharge: 0,
         );
 
         if (proposal == null) {

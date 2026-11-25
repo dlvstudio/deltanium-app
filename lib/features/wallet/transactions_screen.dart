@@ -122,7 +122,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
           Text(tr('tx.balance'), style: GoogleFonts.manrope(color: Brand.muted, fontSize: 13)),
           const SizedBox(height: 4),
           Text(
-            _balance == null ? '—' : DFormat.full(_balance!),
+            _balance == null ? '—' : DFormat.exact(_balance!),
             style: GoogleFonts.syne(color: Brand.sand, fontSize: 28, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 12),
@@ -130,8 +130,8 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
             spacing: 24,
             runSpacing: 6,
             children: [
-              _stat(tr('tx.totalIn'), '+${DFormat.d(inSum)}', Brand.moss),
-              _stat(tr('tx.totalOut'), '−${DFormat.d(outSum)}', Brand.danger),
+              _stat(tr('tx.totalIn'), '+${DFormat.exact(inSum)}', Brand.moss),
+              _stat(tr('tx.totalOut'), '−${DFormat.exact(outSum)}', Brand.danger),
             ],
           ),
         ],
@@ -242,7 +242,7 @@ class _TxTile extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                '${t.incoming ? '+' : '−'}${DFormat.d(t.amount)}',
+                '${t.incoming ? '+' : '−'}${DFormat.exact(t.amount)}',
                 style: GoogleFonts.manrope(color: color, fontWeight: FontWeight.w800, fontSize: 15),
               ),
             ],
@@ -265,7 +265,7 @@ class _TxTile extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _row(ctx, tr('tx.d.amount'), '${t.incoming ? '+' : '−'}${DFormat.full(t.amount)}'),
+              _row(ctx, tr('tx.d.amount'), '${t.incoming ? '+' : '−'}${DFormat.exact(t.amount)}'),
               _row(ctx, tr('tx.d.time'), when),
               _row(ctx, tr('tx.d.from'), WalletTransaction.accountLabel(t.from), copy: t.from),
               _row(ctx, tr('tx.d.to'), WalletTransaction.accountLabel(t.to), copy: t.to),
