@@ -183,22 +183,23 @@ class PostPublisher {
       final lines = <StorageChargeItem>[];
       for (final m in pendingMedia) {
         final p = m.pending;
-        final c = await WalletService.quoteCharge(
+        final c = await WalletService.quoteChargeDetail(
           sizeBytes: p['fileSize'] as int,
           storeNodes: (p['storeNodeIds'] as List).length,
-          months: p['months'] as int? ?? 12,
+          months: p['months'] as int? ?? 1,
         );
         if (c == null) throw Exception('Could not get the storage price from Central. Try again.');
-        lines.add(StorageChargeItem(m.name, p['fileSize'] as int, c));
+        lines.add(StorageChargeItem(m.name, p['fileSize'] as int, c.charge, monthly: c.monthly));
       }
       final postSize = postStoredBytes(metadataEntries, postBlocks, contractIdLength: 32, shareType: r.shareType);
-      final postCharge = await WalletService.quoteCharge(
+      final postQuote = await WalletService.quoteChargeDetail(
         sizeBytes: postSize,
         storeNodes: 1,
         replicas: AppConstants.replicationFactor,
       );
-      if (postCharge == null) throw Exception('Could not get the storage price from Central. Try again.');
-      lines.add(StorageChargeItem('Post', postSize, postCharge));
+      if (postQuote == null) throw Exception('Could not get the storage price from Central. Try again.');
+      final postCharge = postQuote.charge;
+      lines.add(StorageChargeItem('Post', postSize, postCharge, monthly: postQuote.monthly));
 
       final storageInfo = await PostService.preparePostUploadWithStorageCost(
         postResult: postResult,
@@ -213,6 +214,7 @@ class PostPublisher {
       storageInfo['totalFee'] = StorageChargeItem.total(lines);
       storageInfo['estimatedSize'] = lines.fold<int>(0, (a, l) => a + l.sizeBytes);
       storageInfo['breakdown'] = lines;
+      storageInfo['monthlyFee'] = StorageChargeItem.totalMonthly(lines);
       storageInfo['feeBasis'] = '';
       _progress('Awaiting fee confirmation...');
       if (!await confirmStorage(storageInfo)) throw PostPublishCancelled();
@@ -412,11 +414,17 @@ class StorageChargeItem {
   final String label;
   final int sizeBytes;
   final double charge;
-  const StorageChargeItem(this.label, this.sizeBytes, this.charge);
+
+  /// Taken each month afterwards while it is stored (AutoRenew).
+  final double monthly;
+  const StorageChargeItem(this.label, this.sizeBytes, this.charge, {this.monthly = 0});
 
   /// Sum in 0.0001 D steps, so floating point never adds or drops a fraction of what is shown.
   static double total(List<StorageChargeItem> items) =>
       items.fold<int>(0, (a, l) => a + (l.charge * 10000).round()) / 10000;
+
+  static double totalMonthly(List<StorageChargeItem> items) =>
+      items.fold<int>(0, (a, l) => a + (l.monthly * 10000).round()) / 10000;
 }
 
 /// Bytes Central bills for a post, the way [WalletService.storedBytes] counts them once each metadata entry

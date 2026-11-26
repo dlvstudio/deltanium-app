@@ -363,6 +363,7 @@ class _PostCommentsSectionState extends State<PostCommentsSection> {
           estimatedSizeBytes: storageInfo['estimatedSize'] as int? ?? 500,
           feeBasis: storageInfo['feeBasis'] as String? ?? 'Comment storage fee',
           itemLabel: 'comment',
+          monthlyAfter: (storageInfo['monthlyFee'] as num?)?.toDouble() ?? 0,
           onConfirm: () => completer.complete(true),
           onCancel: () => completer.complete(false),
         );
@@ -405,8 +406,9 @@ class _PostCommentsSectionState extends State<PostCommentsSection> {
         reconfirmCharge: (charge) => mounted
             ? confirmStorageCharge(context, fileName: 'Comment', sizeBytes: 0, charge: charge, itemLabel: 'comment')
             : Future.value(false),
-        confirmMediaCharge: (name, size, charge) => mounted
-            ? confirmStorageCharge(context, fileName: name, sizeBytes: size, charge: charge, itemLabel: 'attachment')
+        confirmMediaCharge: (name, size, charge, monthly) => mounted
+            ? confirmStorageCharge(context,
+                fileName: name, sizeBytes: size, charge: charge, monthly: monthly, itemLabel: 'attachment')
             : Future.value(false),
         onProgress: (message) {
           if (mounted) {

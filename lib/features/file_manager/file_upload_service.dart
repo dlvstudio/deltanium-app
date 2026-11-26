@@ -41,12 +41,12 @@ class FileUploadService {
     String? policyScheme,
     String? parentFileId, // 🆕 Parent file ID (for comment media, etc.)
     String? contractId, // 🆕 Storage Contract ID for blockchain integration
-    int storageMonths = 12, // TOKENOMICS_V2 §6: prepaid storage term
-    String storageContractType = 'TimeFixed', // or 'AutoRenew'
+    int storageMonths = 1, // paid now; AutoRenew then bills monthly from the wallet
+    String storageContractType = 'AutoRenew', // or 'TimeFixed' (prepaid term, no renewal)
     bool socialItem = false, // §10: reactions, comments, chat messages (free only within a social allowance, if any)
     /// Asked with Central's exact charge (D) before anything is uploaded, when the charge is above 0;
     /// return false to cancel. The charge shown is the charge registration takes.
-    Future<bool> Function(double charge)? confirmCharge,
+    Future<bool> Function(double charge, double monthly)? confirmCharge,
     /// Upload but do not register (pay) yet: the result carries `pendingRegistration` for
     /// [registerPending], so a caller can confirm one total for several items first.
     bool deferRegistration = false,
@@ -168,19 +168,20 @@ class FileUploadService {
       // TOKENOMICS_V2 §6/§10: the exact charge registration will take (same size, Stores and kind); stop early
       // if it is unaffordable or the user declines it.
       if (!deferRegistration) {
-        final charge = await WalletService.quoteCharge(
+        final q = await WalletService.quoteChargeDetail(
           sizeBytes: fileData.length,
           storeNodes: targetNodes.length,
           social: socialItem,
           months: storageMonths,
         );
+        final charge = q?.charge;
         if (charge != null && charge > 0) {
           final balance = await WalletService.getBalance() ?? 0;
           if (balance < charge) {
             throw Exception('Storage costs ${DFormat.exact(charge)} but your balance is '
                 '${DFormat.exact(balance)}. Top up your wallet first.');
           }
-          if (confirmCharge != null && !await confirmCharge(charge)) {
+          if (confirmCharge != null && !await confirmCharge(charge, q!.monthly)) {
             throw StorageChargeDeclined();
           }
         }
@@ -570,8 +571,8 @@ class FileUploadService {
         storeNodeIds: (pending['storeNodeIds'] as List).cast<String>(),
         fileSize: pending['fileSize'] as int,
         fileHash: pending['fileHash'] as String? ?? '',
-        months: pending['months'] as int? ?? 12,
-        contractType: pending['contractType'] as String? ?? 'TimeFixed',
+        months: pending['months'] as int? ?? 1,
+        contractType: pending['contractType'] as String? ?? 'AutoRenew',
         blocks: (pending['blocks'] as List).cast<Map<String, Object>>(),
         social: pending['social'] as bool? ?? false,
       );
@@ -583,8 +584,8 @@ class FileUploadService {
     required List<String> storeNodeIds,
     required int fileSize,
     required String fileHash,
-    int months = 12,
-    String contractType = 'TimeFixed',
+    int months = 1,
+    String contractType = 'AutoRenew',
     List<Map<String, Object>> blocks = const [],
     bool social = false,
   }) async {

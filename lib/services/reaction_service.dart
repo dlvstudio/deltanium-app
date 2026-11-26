@@ -295,6 +295,13 @@ class ReactionService {
           'X-Signature': signature,
         },
       );
+      if (resp.statusCode == 200) {
+        // Stop paying for the removed reactions' storage (the Store returns their file ids).
+        try {
+          final ids = ((jsonDecode(resp.body) as Map)['fileIds'] as List? ?? const []).map((e) => '$e').toList();
+          if (ids.isNotEmpty) WalletService.stopRenewal(ids).ignore();
+        } catch (_) {}
+      }
       return resp.statusCode == 200;
     } catch (e) {
       AppLogger.log('ReactionService error: $e');
@@ -380,12 +387,13 @@ class ReactionService {
 
       // What Central takes for this social item (0 within the monthly social allowance, if the network has one;
       // otherwise small items are billed the minimum fee; sendReaction/sendComment re-check the real size). Recorded as the contract fee.
-      final charge = await WalletService.quoteCharge(
+      final quote = await WalletService.quoteChargeDetail(
         sizeBytes: estimatedSize,
         storeNodes: 1,
         replicas: AppConstants.replicationFactor,
         social: true,
       );
+      final charge = quote?.charge;
       final body = jsonEncode({
         'contractType': 'TimeFixed',
         'startDateUnix': startDate,
@@ -423,6 +431,7 @@ class ReactionService {
           'totalFee': totalFee,
           'feeBasis': data['feeBasis'] ?? 'Storage node calculated fee',
           'estimatedSize': estimatedSize,
+          'monthlyFee': quote?.monthly ?? 0.0,
           'durationDays': durationDays,
           'estimatedCostPerDay': totalFee / (durationDays > 0 ? durationDays : 1),
         };

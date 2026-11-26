@@ -14,6 +14,7 @@ Future<bool> confirmStorageCharge(
   required String fileName,
   required int sizeBytes,
   required double charge,
+  double monthly = 0,
   String itemLabel = 'file',
 }) {
   final completer = Completer<bool>();
@@ -26,6 +27,7 @@ Future<bool> confirmStorageCharge(
     feeBasis: '',
     itemLabel: itemLabel,
     breakdown: [(label: fileName, charge: charge)],
+    monthlyAfter: monthly,
     onConfirm: () => completer.complete(true),
     onCancel: () => completer.complete(false),
   );
@@ -48,6 +50,9 @@ class ConfirmStorageCostDialog extends StatefulWidget {
   /// Per-item charges summing to [totalFee] (a post with attachments); empty shows the total only.
   final List<StorageChargeLine> breakdown;
 
+  /// What Central then takes each month while it is stored (billed monthly, AutoRenew); 0 hides the line.
+  final double monthlyAfter;
+
   /// Chat: the Store contract reserves space once for the whole conversation; each message is
   /// registered and billed by Central on its own.
   final bool reservedBundle;
@@ -66,6 +71,7 @@ class ConfirmStorageCostDialog extends StatefulWidget {
     this.itemLabel = 'post',
     this.reservedBundle = false,
     this.breakdown = const [],
+    this.monthlyAfter = 0,
   }) : super(key: key);
 
   @override
@@ -83,6 +89,7 @@ class ConfirmStorageCostDialog extends StatefulWidget {
     String itemLabel = 'post',
     bool reservedBundle = false,
     List<StorageChargeLine> breakdown = const [],
+    double monthlyAfter = 0,
   }) {
     showDialog(
       context: context,
@@ -96,6 +103,7 @@ class ConfirmStorageCostDialog extends StatefulWidget {
         itemLabel: itemLabel,
         reservedBundle: reservedBundle,
         breakdown: breakdown,
+        monthlyAfter: monthlyAfter,
         onConfirm: onConfirm,
         onCancel: onCancel ?? () {},
       ),
@@ -147,7 +155,11 @@ class _ConfirmStorageCostDialogState extends State<ConfirmStorageCostDialog> {
       );
     }
     final after = _balance == null ? '' : ' Balance after: ${DFormat.exact(_balance! - widget.totalFee)}.';
-    return (false, 'Exactly $total is deducted from your wallet when you confirm.$after');
+    final monthly = widget.monthlyAfter > 0
+        ? ' After that, ${DFormat.exact(widget.monthlyAfter)} is taken each month while it is stored; '
+            'deleting it stops the payments.'
+        : '';
+    return (false, 'Exactly $total is deducted from your wallet when you confirm.$after$monthly');
   }
 
   @override
@@ -168,11 +180,12 @@ class _ConfirmStorageCostDialogState extends State<ConfirmStorageCostDialog> {
               style: const TextStyle(fontSize: 14),
             ),
             const SizedBox(height: 16),
-            _row('Storage duration:', '${widget.durationDays} days'),
             if (widget.estimatedSizeBytes > 0)
               _row(widget.reservedBundle ? 'Reserved space:' : 'Size:', _formatSize(widget.estimatedSizeBytes)),
             for (final l in widget.breakdown) _row(l.label, DFormat.exact(l.charge)),
-            _row('You pay:', DFormat.exact(widget.totalFee), bold: true),
+            _row('You pay now:', DFormat.exact(widget.totalFee), bold: true),
+            if (widget.monthlyAfter > 0)
+              _row('Then each month:', DFormat.exact(widget.monthlyAfter), bold: true),
             if (widget.feeBasis.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 2),

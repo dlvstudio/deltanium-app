@@ -98,7 +98,7 @@ class WalletService {
     required List<String> storeNodeIds,
     required int sizeBytes,
     bool social = false,
-    int months = 12,
+    int months = 1,
     List<Map<String, Object>> blocks = const [],
     int? replicas,
   }) async {
@@ -111,7 +111,9 @@ class WalletService {
       'fileSize': sizeBytes,
       'fileHash': '',
       'months': months,
-      'contractType': 'TimeFixed',
+      // Billed monthly: Central takes the first month now and renews from the wallet each month until the
+      // item is deleted (stopRenewal) or the wallet runs dry (30 days of grace).
+      'contractType': 'AutoRenew',
       'blocks': blocks,
       // Copies to pay for: Central copies the item to more Stores until this many hold it, so a post
       // uploaded to one Store still ends up replicated (TOKENOMICS_V2 §6).
@@ -232,26 +234,49 @@ class WalletService {
   static Future<WalletResult> setEgressCap(double maxDPerMonth) =>
       _call('POST', '/api/wallet/egress-cap', json: {'maxDPerMonth': maxDPerMonth});
 
-  /// Exactly the D that registering an item will take from the signed-in wallet (Central's `charge`), using the
-  /// same inputs registration will send: [sizeBytes], the number of Stores it goes to, the paid [replicas]
-  /// (registerStorage sends AppConstants.replicationFactor; file uploads send none, i.e. 0) and [social].
-  /// 0 when fees are not enforced. Null when Central could not be asked.
+  /// Exactly the D that registering an item takes from the signed-in wallet now (Central's `charge`: the first
+  /// month, at least the minimum fee), using the same inputs registration sends: [sizeBytes], the number of Stores
+  /// it goes to, the paid [replicas] (registerStorage sends AppConstants.replicationFactor; file uploads send none,
+  /// i.e. 0) and [social]. 0 when fees are not enforced. Null when Central could not be asked.
   static Future<double?> quoteCharge({
     required int sizeBytes,
     required int storeNodes,
     int replicas = 0,
     bool social = false,
-    int months = 12,
+    int months = 1,
+  }) async =>
+      (await quoteChargeDetail(
+        sizeBytes: sizeBytes,
+        storeNodes: storeNodes,
+        replicas: replicas,
+        social: social,
+        months: months,
+      ))
+          ?.charge;
+
+  /// [quoteCharge] plus `monthly`: what Central then takes each month while the item is stored (AutoRenew).
+  static Future<({double charge, double monthly})?> quoteChargeDetail({
+    required int sizeBytes,
+    required int storeNodes,
+    int replicas = 0,
+    bool social = false,
+    int months = 1,
   }) async {
-    if (sizeBytes <= 0) return 0;
+    if (sizeBytes <= 0) return (charge: 0.0, monthly: 0.0);
     final auth = await _auth();
     final owner = auth == null ? null : CryptoService.normalizePublicKey(auth['publicKey']!);
     final q = 'sizeBytes=$sizeBytes&replicas=$replicas&months=$months&storeNodes=$storeNodes'
         '${social ? '&kind=social' : ''}${owner != null ? '&owner=${Uri.encodeQueryComponent(owner)}' : ''}';
     final m = (await _call('GET', '/api/storedfile/quote?$q', signed: false)).map;
     final c = m?['charge'];
-    return c is num ? c.toDouble() : null;
+    if (c is! num) return null;
+    final monthly = m?['monthly'];
+    return (charge: c.toDouble(), monthly: monthly is num ? monthly.toDouble() : 0.0);
   }
+
+  /// The owner deleted these items: Central stops renewing their storage (paid months run out).
+  static Future<WalletResult> stopRenewal(List<String> fileIds) =>
+      _call('POST', '/api/storedfile/stop-renewal', json: {'fileIds': fileIds});
 
   /// Before uploading a reaction or comment: the charge for its real [sizeBytes] (as registerStorageAt will pay)
   /// must equal the [confirmed] one, else [reconfirm] is asked with the new exact charge. True to go ahead.

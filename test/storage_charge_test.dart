@@ -21,6 +21,13 @@ void main() {
     ];
     expect(StorageChargeItem.total(items), 38.4028);
     expect(StorageChargeItem.total(const []), 0);
+    expect(
+      StorageChargeItem.totalMonthly(const [
+        StorageChargeItem('Image', 2086124, 0.7771, monthly: 0.7771),
+        StorageChargeItem('Post', 2108, 0.1, monthly: 0.0008),
+      ]),
+      0.7779,
+    );
   });
 
   test('post size quoted before the contract equals the size paid once the contract id is set', () {

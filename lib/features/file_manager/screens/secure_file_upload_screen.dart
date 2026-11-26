@@ -210,8 +210,9 @@ class _SecureFileUploadScreenState extends State<SecureFileUploadScreen> {
           mnemonic: _userMnemonic!,
           sharedWithUsers: _sharedWithUsers.isNotEmpty ? _sharedWithUsers : null,
           selectedNode: _selectedNode!,
-          confirmCharge: (charge) => mounted
-              ? confirmStorageCharge(context, fileName: fileName, sizeBytes: fileBytes.length, charge: charge)
+          confirmCharge: (charge, monthly) => mounted
+              ? confirmStorageCharge(context,
+                  fileName: fileName, sizeBytes: fileBytes.length, charge: charge, monthly: monthly)
               : Future.value(false),
         );
         

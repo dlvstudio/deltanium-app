@@ -309,6 +309,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       feeBasis: storageInfo['feeBasis'] as String? ?? 'Storage fee calculated by node',
       itemLabel: 'message',
       reservedBundle: storageInfo['perMessage'] != true,
+      monthlyAfter: (storageInfo['monthlyFee'] as num?)?.toDouble() ?? 0,
       onConfirm: () => completer.complete(true),
       onCancel: () => completer.complete(false),
     );

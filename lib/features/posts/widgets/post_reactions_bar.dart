@@ -324,6 +324,7 @@ class _PostReactionsBarState extends State<PostReactionsBar> {
         estimatedSizeBytes: storageInfo['estimatedSize'] as int? ?? 500,
         feeBasis: storageInfo['feeBasis'] as String? ?? 'Reaction storage fee',
         itemLabel: 'reaction',
+        monthlyAfter: (storageInfo['monthlyFee'] as num?)?.toDouble() ?? 0,
         onConfirm: () => completer.complete(true),
         onCancel: () => completer.complete(false),
       );

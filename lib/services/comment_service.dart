@@ -31,7 +31,7 @@ class CommentService {
     String? fileId,
     String? firstBlockId,
     /// Confirms Central's exact charge for each attached file before it is uploaded; false skips that file.
-    Future<bool> Function(String fileName, int sizeBytes, double charge)? confirmMediaCharge,
+    Future<bool> Function(String fileName, int sizeBytes, double charge, double monthly)? confirmMediaCharge,
     /// The charge the user confirmed for the comment; checked against the real size before it is uploaded.
     double? confirmedCharge,
     Future<bool> Function(double charge)? reconfirmCharge,
@@ -96,7 +96,8 @@ class CommentService {
               contractId: contractId, // 🆕 Pass ContractId for blockchain integration
               confirmCharge: confirmMediaCharge == null
                   ? null
-                  : (charge) => confirmMediaCharge(media['name']?.toString() ?? 'file', fileBytes.length, charge),
+                  : (charge, monthly) =>
+                      confirmMediaCharge(media['name']?.toString() ?? 'file', fileBytes.length, charge, monthly),
             );
             
             AppLogger.log('CommentService: Upload result for ${media['name']}: success=${uploadResult['success']}, fileId=${uploadResult['fileId']}, error=${uploadResult['error']}');
@@ -415,6 +416,8 @@ class CommentService {
           'X-Signature': signature,
         },
       );
+      // Stop paying for the deleted comment's storage.
+      if (resp.statusCode == 200) WalletService.stopRenewal([commentFileId]).ignore();
       return resp.statusCode == 200;
     } catch (e) {
       AppLogger.log('CommentService error: $e');
@@ -501,12 +504,13 @@ class CommentService {
 
       // What Central takes for this social item (0 within the monthly social allowance, if the network has one;
       // otherwise small items are billed the minimum fee; sendReaction/sendComment re-check the real size). Recorded as the contract fee.
-      final charge = await WalletService.quoteCharge(
+      final quote = await WalletService.quoteChargeDetail(
         sizeBytes: estimatedSize,
         storeNodes: 1,
         replicas: AppConstants.replicationFactor,
         social: true,
       );
+      final charge = quote?.charge;
       final body = jsonEncode({
         'contractType': 'TimeFixed',
         'startDateUnix': startDate,
@@ -544,6 +548,7 @@ class CommentService {
           'totalFee': totalFee,
           'feeBasis': data['feeBasis'] ?? 'Storage node calculated fee',
           'estimatedSize': estimatedSize,
+          'monthlyFee': quote?.monthly ?? 0.0,
           'durationDays': durationDays,
           'estimatedCostPerDay': totalFee / (durationDays > 0 ? durationDays : 1),
         };

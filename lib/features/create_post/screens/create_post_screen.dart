@@ -408,6 +408,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         for (final l in (storageInfo['breakdown'] as List<StorageChargeItem>? ?? const []))
           (label: l.label, charge: l.charge),
       ],
+      monthlyAfter: (storageInfo['monthlyFee'] as num?)?.toDouble() ?? 0,
       onConfirm: () => completer.complete(true),
       onCancel: () => completer.complete(false),
     );

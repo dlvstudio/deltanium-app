@@ -295,7 +295,7 @@ class ChatService {
         contractId: contractId,
         socialItem: true,
         onProgress: (msg) => AppLogger.log('ChatService upload: $msg'),
-        confirmCharge: (charge) async {
+        confirmCharge: (charge, monthly) async {
           if (_confirmedMessageCharge[conversationId] == charge) return true;
           if (onConfirmFee == null) return false;
           final ok = await onConfirmFee({
@@ -304,6 +304,7 @@ class ChatService {
             'estimatedCostPerDay': charge / 365,
             'estimatedSize': fileData.length,
             'perMessage': true,
+            'monthlyFee': monthly,
             'feeBasis': 'Each message is billed on its own. You are asked again in this conversation only if the price changes.',
           });
           if (ok) _confirmedMessageCharge[conversationId] = charge;

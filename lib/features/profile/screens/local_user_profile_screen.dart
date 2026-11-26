@@ -368,7 +368,7 @@ class _LocalUserProfileScreenState extends State<LocalUserProfileScreen> {
               ),
             ),
           Text(
-            'Paid storage: ${_mb(storage?['paidBytes'])} · ${storage?['pricePerGbMonth'] ?? 800} D/GB/month per replica',
+            'Paid storage: ${_mb(storage?['paidBytes'])} · ${storage?['pricePerGbMonth'] ?? 200} D/GB/month per copy, billed monthly',
             style: style,
           ),
           Text(
