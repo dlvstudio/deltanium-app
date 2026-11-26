@@ -1,3 +1,4 @@
+import 'package:deltanium_app/widgets/renewal_warning.dart';
 import 'package:deltanium_app/app/router.dart';
 import 'package:deltanium_app/config/brand.dart';
 import 'package:deltanium_app/config/constants.dart';
@@ -1141,6 +1142,7 @@ class _LocalUserProfileScreenState extends State<LocalUserProfileScreen> {
                         'Top up by bank transfer / VietQR (3% fee).',
                         style: GoogleFonts.manrope(color: Brand.muted, fontSize: 12, height: 1.4),
                       ),
+                      RenewalWarning(margin: const EdgeInsets.only(top: 12), onTopUp: _showTopUpDialog),
                       _usageSummary(),
                       const SizedBox(height: 12),
                       Wrap(

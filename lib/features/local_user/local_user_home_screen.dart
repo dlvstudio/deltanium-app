@@ -1,3 +1,4 @@
+import 'package:deltanium_app/widgets/renewal_warning.dart';
 import 'package:deltanium_app/app/router.dart';
 import 'package:deltanium_app/config/brand.dart';
 import 'package:deltanium_app/config/theme.dart';
@@ -92,6 +93,7 @@ class _LocalUserHomeScreenState extends State<LocalUserHomeScreen>
             child: Column(
               children: [
                 _buildTopBar(isDesktop),
+                const RenewalWarning(),
                 Container(
                   decoration: const BoxDecoration(
                     border: Border(

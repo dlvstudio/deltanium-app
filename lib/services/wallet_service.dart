@@ -1,3 +1,4 @@
+import 'package:deltanium_app/widgets/renewal_warning.dart' show RenewalStatus;
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
@@ -275,6 +276,16 @@ class WalletService {
   }
 
   /// The owner deleted these items: Central stops renewing their storage (paid months run out).
+  /// What the wallet must cover to keep the stored items (grace and renewals due this week); null when unknown.
+  static Future<RenewalStatus?> renewals() async {
+    try {
+      final r = await _call('GET', '/api/storedfile/renewals');
+      return r.ok && r.map != null ? RenewalStatus.fromJson(r.map!) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<WalletResult> stopRenewal(List<String> fileIds) =>
       _call('POST', '/api/storedfile/stop-renewal', json: {'fileIds': fileIds});
 

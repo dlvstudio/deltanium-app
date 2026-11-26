@@ -5,6 +5,7 @@ import 'package:deltanium_app/l10n/app_lang.dart';
 import 'package:deltanium_app/services/auth_service.dart';
 import 'package:deltanium_app/services/wallet_service.dart';
 import 'package:deltanium_app/utils/d_format.dart';
+import 'package:deltanium_app/widgets/renewal_warning.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -94,6 +95,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
                 children: [
                   _summary(),
+                  const RenewalWarning(margin: EdgeInsets.only(top: 12)),
                   const SizedBox(height: 16),
                   _filters(),
                   const SizedBox(height: 12),

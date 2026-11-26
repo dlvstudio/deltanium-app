@@ -157,7 +157,7 @@ class _ConfirmStorageCostDialogState extends State<ConfirmStorageCostDialog> {
     final after = _balance == null ? '' : ' Balance after: ${DFormat.exact(_balance! - widget.totalFee)}.';
     final monthly = widget.monthlyAfter > 0
         ? ' After that, ${DFormat.exact(widget.monthlyAfter)} is taken each month while it is stored; '
-            'deleting it stops the payments.'
+            'deleting it stops the payments. If your balance runs short it is kept for 30 more days, then deleted.'
         : '';
     return (false, 'Exactly $total is deducted from your wallet when you confirm.$after$monthly');
   }
