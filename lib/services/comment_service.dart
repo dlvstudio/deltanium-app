@@ -8,6 +8,7 @@ import 'package:deltanium_app/services/storage_contract_service.dart';
 import 'package:deltanium_app/services/file_crypto_service.dart';
 import 'package:deltanium_app/config/constants.dart';
 import 'package:deltanium_app/services/wallet_service.dart';
+import 'package:deltanium_app/services/store_delete_service.dart';
 import 'package:deltanium_app/features/file_manager/file_upload_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -399,26 +400,23 @@ class CommentService {
     required String nodeEndpoint,
     required String userPublicKey,
     required String userMnemonic,
+    List<String> attachmentFileIds = const [],
   }) async {
     try {
       AppLogger.log('CommentService: deleteComment comment=$commentFileId node=$nodeEndpoint user=${userPublicKey.substring(0, 10)}...');
-      final path = '/api/post/comments/$commentFileId';
-      final timestamp = (DateTime.now().millisecondsSinceEpoch / 1000).floor().toString();
-      final method = 'DELETE';
-      final bodyHash = '';
-      final dataToSign = '$method$path$timestamp$bodyHash';
-      final signature = await CryptoService.sign(dataToSign, userMnemonic);
-      final resp = await http.delete(
-        Uri.parse('$nodeEndpoint$path'),
-        headers: {
-          'X-User-PubKey': CryptoService.normalizePublicKey(userPublicKey),
-          'X-Timestamp': timestamp,
-          'X-Signature': signature,
-        },
+      final gone = await StoreDeleteService.deleteEverywhere(
+        fileId: commentFileId,
+        path: '/api/post/comments/$commentFileId',
+        knownEndpoint: nodeEndpoint,
+        userPublicKey: userPublicKey,
+        userMnemonic: userMnemonic,
       );
-      // Stop paying for the deleted comment's storage.
-      if (resp.statusCode == 200) WalletService.stopRenewal([commentFileId]).ignore();
-      return resp.statusCode == 200;
+      // Stop paying for the deleted comment's storage (and its images).
+      if (gone) {
+        WalletService.stopRenewal(<String>{commentFileId, ...attachmentFileIds.where((id) => id.isNotEmpty)}.toList())
+            .ignore();
+      }
+      return gone;
     } catch (e) {
       AppLogger.log('CommentService error: $e');
       return false;

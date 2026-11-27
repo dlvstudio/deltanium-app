@@ -6,6 +6,8 @@ import 'package:deltanium_app/features/posts/screens/my_posts_screen.dart';
 import 'package:deltanium_app/features/posts/widgets/post_comments_section.dart';
 import 'package:deltanium_app/features/posts/widgets/post_reactions_bar.dart';
 import 'package:deltanium_app/services/crypto_service.dart';
+import 'package:deltanium_app/services/post_service.dart';
+import 'package:deltanium_app/l10n/app_lang.dart';
 import 'package:flutter/material.dart';
 import 'package:deltanium_app/utils/author_label.dart';
 import 'package:go_router/go_router.dart';
@@ -21,6 +23,9 @@ class OptimizedPostCard extends StatelessWidget {
   final Function(String, String)? onFileDownload;
   final Function(String)? onFileRemove;
 
+  /// Called with the post's fileId after the owner deleted it, so the list can drop it.
+  final void Function(String fileId)? onDeleted;
+
   const OptimizedPostCard({
     Key? key,
     required this.post,
@@ -30,6 +35,7 @@ class OptimizedPostCard extends StatelessWidget {
     this.userMnemonic,
     this.onFileDownload,
     this.onFileRemove,
+    this.onDeleted,
   }) : super(key: key);
 
   @override
@@ -126,6 +132,25 @@ class OptimizedPostCard extends StatelessWidget {
                         ],
                       ),
                     ),
+                    if (_canDelete(post))
+                      PopupMenuButton<String>(
+                        tooltip: '',
+                        icon: Icon(Icons.more_vert_rounded, color: Brand.muted, size: 20),
+                        color: Brand.panel,
+                        onSelected: (_) => _confirmDelete(context),
+                        itemBuilder: (_) => [
+                          PopupMenuItem<String>(
+                            value: 'delete',
+                            child: Row(
+                              children: [
+                                Icon(Icons.delete_outline_rounded, color: Brand.danger, size: 18),
+                                const SizedBox(width: 8),
+                                Text(tr('delete.menu'), style: GoogleFonts.manrope(color: Brand.danger)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -353,6 +378,39 @@ class OptimizedPostCard extends StatelessWidget {
   }
 
   // Check if post is shared with current user (vs owned by current user)
+  bool _canDelete(PostMetadata post) =>
+      !_isPostShared(post) && userPublicKey != null && userMnemonic != null && nodeEndpoint.isNotEmpty;
+
+  Future<void> _confirmDelete(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('delete.postTitle')),
+        content: Text(tr('delete.postBody')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(tr('delete.cancel'))),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(tr('delete.menu'), style: TextStyle(color: Brand.danger)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final deleted = await PostService.deletePost(
+      postFileId: post.fileId,
+      nodeEndpoint: nodeEndpoint,
+      userPublicKey: userPublicKey!,
+      userMnemonic: userMnemonic!,
+      attachmentFileIds: (post.relatedFiles ?? const [])
+          .map((f) => (f['fileId'] ?? f['FileId'])?.toString() ?? '')
+          .toList(),
+    );
+    messenger.showSnackBar(SnackBar(content: Text(tr(deleted ? 'delete.done' : 'delete.failed'))));
+    if (deleted) onDeleted?.call(post.fileId);
+  }
+
   bool _isPostShared(PostMetadata post) {
     // 🔧 FIX: Check if current user is the owner by comparing ownerPubKey from decrypted metadata
     // If we successfully decrypted the post, we can check the ownerPubKey field

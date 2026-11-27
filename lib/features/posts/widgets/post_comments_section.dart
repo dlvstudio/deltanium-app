@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:deltanium_app/utils/author_label.dart';
 import 'package:deltanium_app/config/theme.dart';
+import 'package:deltanium_app/config/brand.dart';
+import 'package:deltanium_app/l10n/app_lang.dart';
 import 'package:deltanium_app/features/posts/screens/my_posts_screen.dart';
 import 'package:deltanium_app/services/comment_service.dart';
 import 'package:deltanium_app/services/app_logger.dart';
@@ -960,6 +962,52 @@ class _PostCommentsSectionState extends State<PostCommentsSection> {
     );
   }
 
+  bool _isOwnComment(String? commenterPubKey) {
+    final me = widget.userPublicKey;
+    if (commenterPubKey == null || me == null || widget.userMnemonic == null) return false;
+    try {
+      return CryptoService.normalizePublicKey(commenterPubKey) == CryptoService.normalizePublicKey(me);
+    } catch (_) {
+      return commenterPubKey == me;
+    }
+  }
+
+  Future<void> _confirmDeleteComment(Map<String, dynamic> comment) async {
+    final fileId = (comment['FileId'] ?? comment['fileId'])?.toString();
+    if (fileId == null || fileId.isEmpty) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('delete.commentTitle')),
+        content: Text(tr('delete.commentBody')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(tr('delete.cancel'))),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(tr('delete.menu'), style: TextStyle(color: Brand.danger)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final images = (comment['relatedFiles'] as List?) ?? const [];
+    final deleted = await CommentService.deleteComment(
+      commentFileId: fileId,
+      nodeEndpoint: widget.nodeEndpoint,
+      userPublicKey: widget.userPublicKey!,
+      userMnemonic: widget.userMnemonic!,
+      attachmentFileIds: images
+          .whereType<Map>()
+          .map((f) => (f['fileId'] ?? f['FileId'])?.toString() ?? '')
+          .toList(),
+    );
+    messenger.showSnackBar(SnackBar(content: Text(tr(deleted ? 'delete.done' : 'delete.failed'))));
+    if (!deleted || !mounted) return;
+    setState(() => _comments.removeWhere((c) => (c['FileId'] ?? c['fileId'])?.toString() == fileId));
+    _modalStateSetter?.call(() {});
+  }
+
   Widget _buildCommentItem(Map<String, dynamic> comment) {
     final text = comment['text'] as String? ?? 'Comment text not available';
     final createdAt = comment['createdAt'] as String?;
@@ -1017,6 +1065,15 @@ class _PostCommentsSectionState extends State<PostCommentsSection> {
                       ),
                           ),
                         ),
+                        if (_isOwnComment(commenterPubKey))
+                          InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () => _confirmDeleteComment(comment),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              child: Icon(Icons.delete_outline_rounded, size: 18, color: Brand.danger),
+                            ),
+                          ),
                         // 🆕 Tag to show comment type
                         Container(
                           padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),

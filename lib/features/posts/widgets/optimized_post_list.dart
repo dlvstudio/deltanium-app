@@ -33,6 +33,9 @@ class OptimizedPostList extends StatefulWidget {
 
 class _OptimizedPostListState extends State<OptimizedPostList> {
   final ScrollController _scrollController = ScrollController();
+
+  /// Posts the owner deleted in this session: hidden at once, before the next refresh.
+  final Set<String> _deleted = {};
   final Map<String, bool> _visiblePosts = {};
 
   @override
@@ -92,6 +95,7 @@ class _OptimizedPostListState extends State<OptimizedPostList> {
       );
       final nodeEndpoint = node['endpoint'] as String? ?? '';
       for (final post in nodePosts) {
+        if (_deleted.contains(post.fileId)) continue;
         allPostsWithNode.add({'post': post, 'nodeEndpoint': nodeEndpoint});
       }
     }
@@ -133,6 +137,7 @@ class _OptimizedPostListState extends State<OptimizedPostList> {
                     // TODO: Implement file removal
                     AppLogger.log('Removing file $fileId from post');
                   },
+                  onDeleted: (fileId) => setState(() => _deleted.add(fileId)),
                 ),
                 if (index < allPostsWithNode.length - 1)
                   Divider(

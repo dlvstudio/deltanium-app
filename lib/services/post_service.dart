@@ -8,6 +8,9 @@ import 'package:deltanium_app/models/storage_contract.dart';
 import 'package:deltanium_app/services/storage_contract_service.dart';
 import 'package:deltanium_app/services/request_signer.dart';
 import 'package:http/http.dart' as http;
+import 'package:deltanium_app/services/crypto_service.dart';
+import 'package:deltanium_app/services/wallet_service.dart';
+import 'package:deltanium_app/services/store_delete_service.dart';
 
 // import 'package:deltanium_app/features/file_manager/file_upload_service.dart';
 
@@ -795,4 +798,34 @@ class PostService {
     
     return true;
   }
-} 
+
+  /// Delete one of your own posts: the Store that holds it removes it now (DELETE /api/post/{id}, owner-signed),
+  /// then Central stops renewing the post and its attachments, so the on-chain term turns "stopped" and the other
+  /// Stores delete their copies (with the post's comments and reactions) when the paid month ends.
+  static Future<bool> deletePost({
+    required String postFileId,
+    required String nodeEndpoint,
+    required String userPublicKey,
+    required String userMnemonic,
+    List<String> attachmentFileIds = const [],
+  }) async {
+    try {
+      final ok = await StoreDeleteService.deleteEverywhere(
+        fileId: postFileId,
+        path: '/api/post/$postFileId',
+        knownEndpoint: nodeEndpoint,
+        userPublicKey: userPublicKey,
+        userMnemonic: userMnemonic,
+      );
+      AppLogger.log('PostService.deletePost $postFileId: ${ok ? 'deleted' : 'failed'}');
+      if (!ok) return false;
+      final ids = <String>{postFileId, ...attachmentFileIds.where((id) => id.isNotEmpty)}.toList();
+      final stop = await WalletService.stopRenewal(ids);
+      if (!stop.ok) AppLogger.log('PostService.deletePost: stop-renewal failed: ${stop.error}');
+      return true;
+    } catch (e) {
+      AppLogger.log('PostService.deletePost error: $e');
+      return false;
+    }
+  }
+}
