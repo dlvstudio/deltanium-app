@@ -91,9 +91,9 @@ class WalletService {
 
   // ---------- storage registration (TOKENOMICS_V2 §6, §10) ----------
 
-  /// Register an item stored on a Store node with Central. This opens its storage escrow, which is what counts
-  /// toward the free quota (and is billed beyond it). [social] marks reactions, comments and chat messages:
-  /// Central never charges the wallet for those. Returns status 402 when a paid item could not be funded.
+  /// Register an item stored on a Store node with Central. This opens its storage escrow and takes its fee from
+  /// the wallet: nothing is free. [social] only labels reactions, comments and chat messages. Returns status 402
+  /// when the item could not be funded.
   static Future<WalletResult> registerStorage({
     required String fileId,
     required List<String> storeNodeIds,
@@ -196,10 +196,10 @@ class WalletService {
   static Future<Map<String, dynamic>?> getReserve() async =>
       (await _call('GET', '/api/wallet/reserve', signed: false)).map;
 
-  /// Free tier, storage, egress and subscriptions of the signed-in user.
+  /// Storage, egress and subscriptions of the signed-in user.
   static Future<Map<String, dynamic>?> getUsage() async => (await _call('GET', '/api/wallet/usage')).map;
 
-  // ---------- email verification (free tier, TOKENOMICS_V2 §10) ----------
+  // ---------- email verification ----------
 
   /// Email a 6-digit code to [email]; the server limits this to one a minute and five a day.
   static Future<WalletResult> sendEmailCode(String email) =>

@@ -335,35 +335,24 @@ class _LocalUserProfileScreenState extends State<LocalUserProfileScreen> {
   }
 
   Widget _usageSummary() {
-    final free = _usage?['freeTier'] as Map<String, dynamic>?;
     final egress = _usage?['egress'] as Map<String, dynamic>?;
     final storage = _usage?['storage'] as Map<String, dynamic>?;
     final plan = _usage?['plan'] as Map<String, dynamic>?;
-    if (free == null) return const SizedBox.shrink();
+    if (_usage == null) return const SizedBox.shrink();
     final style = GoogleFonts.manrope(color: Brand.muted, fontSize: 12, height: 1.5);
     return Padding(
       padding: const EdgeInsets.only(top: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // The network may offer no free storage (quota 0): then say nothing about it.
-          if (((free['storageQuotaBytes'] as num?) ?? 0) > 0)
-            Text(
-              free['eligible'] == true
-                  ? 'Free storage: ${_mb(free['storageUsedBytes'])} / ${_mb(free['storageQuotaBytes'])}'
-                  : 'Free tier: verify your email to get ${_mb(free['storageQuotaBytes'])} free storage',
-              style: style,
-            ),
-          if (free['emailVerified'] != true)
+          if (_usage?['emailVerified'] != true)
             Align(
               alignment: Alignment.centerLeft,
               child: TextButton(
                 style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 32)),
                 onPressed: _verifyEmail,
                 child: Text(
-                  free['requiresVerifiedEmail'] == true && ((free['storageQuotaBytes'] as num?) ?? 0) > 0
-                      ? 'Verify email to keep free storage'
-                      : 'Verify email',
+                  'Verify email',
                   style: GoogleFonts.manrope(color: Brand.sand, fontSize: 12, fontWeight: FontWeight.w600),
                 ),
               ),
@@ -373,7 +362,7 @@ class _LocalUserProfileScreenState extends State<LocalUserProfileScreen> {
             style: style,
           ),
           Text(
-            'Reads this month: ${_mb(egress?['bytes'])} · over-quota charged ${DFormat.exact((egress?['chargedD'] as num?) ?? 0)}',
+            'Reads this month: ${_mb(egress?['bytes'])} · bandwidth charged ${DFormat.exact((egress?['chargedD'] as num?) ?? 0)}',
             style: style,
           ),
           if (plan != null && plan['active'] == true)
