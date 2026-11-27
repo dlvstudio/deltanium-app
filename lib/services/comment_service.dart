@@ -8,6 +8,7 @@ import 'package:deltanium_app/services/storage_contract_service.dart';
 import 'package:deltanium_app/services/file_crypto_service.dart';
 import 'package:deltanium_app/config/constants.dart';
 import 'package:deltanium_app/services/wallet_service.dart';
+import 'package:deltanium_app/services/store_placement.dart';
 import 'package:deltanium_app/services/store_delete_service.dart';
 import 'package:deltanium_app/features/file_manager/file_upload_service.dart';
 import 'package:http/http.dart' as http;
@@ -28,12 +29,13 @@ class CommentService {
     String shareType = 'author',
     List<Map<String, dynamic>>? attachedMedia,
     Function(String)? onProgress,
+    /// Unused: every Store holding the comment gets its own contract (StorePlacement).
     String? contractId,
     String? fileId,
     String? firstBlockId,
-    /// Confirms Central's exact charge for each attached file before it is uploaded; false skips that file.
+    /// Confirms Central's exact charge for each attached file before it is stored; false skips that file.
     Future<bool> Function(String fileName, int sizeBytes, double charge, double monthly)? confirmMediaCharge,
-    /// The charge the user confirmed for the comment; checked against the real size before it is uploaded.
+    /// The charge the user confirmed for the comment; checked against the real size before it is stored.
     double? confirmedCharge,
     Future<bool> Function(double charge)? reconfirmCharge,
   }) async {
@@ -42,213 +44,118 @@ class CommentService {
         AppLogger.log('CommentService: Comment text is empty');
         return false;
       }
-
+      if (shareType != 'public' && shareType != 'author') {
+        AppLogger.log('CommentService: Invalid shareType: $shareType');
+        return false;
+      }
+      if (shareType == 'author' && (postOwnerPublicKey == null || postOwnerPublicKey.isEmpty)) {
+        AppLogger.log('CommentService: Missing post owner key for author-only comment');
+        return false;
+      }
       AppLogger.log('CommentService: sendComment post=$postFileId node=$nodeEndpoint user=${userPublicKey.substring(0, 10)}... shareType=$shareType');
 
-      // 🆕 Step 1: Upload attached media files if any
-      List<Map<String, dynamic>>? uploadedMedia;
+      // A comment (and its files) goes to the Stores holding the post: readers look for it there, and a Store
+      // only takes a comment whose post it holds.
+      final nodes = await StorePlacement.nodesHolding(postFileId, nodeEndpoint);
+      final primaryEndpoint = '${nodes.first['httpsEndpoint'] ?? nodes.first['endpoint']}';
+
+      // 1. Attached files, stored like any item on the same Stores.
+      final relatedFiles = <Map<String, dynamic>>[];
       if (attachedMedia != null && attachedMedia.isNotEmpty) {
-        AppLogger.log('CommentService: Starting upload of ${attachedMedia.length} media files');
         onProgress?.call('Uploading media files...');
-        uploadedMedia = [];
-        final fileUploadService = FileUploadService();
-        
-        // Determine sharing for media (same as comment)
-        final List<String>? sharedWithUsers = shareType == 'author' && postOwnerPublicKey != null
-            ? [postOwnerPublicKey, userPublicKey]
-            : null;
-        
-        AppLogger.log('CommentService: Media sharing - shareType=$shareType, sharedWithUsers=${sharedWithUsers?.length ?? 0}');
-        
-        for (int i = 0; i < attachedMedia.length; i++) {
-          final media = attachedMedia[i];
+        final uploader = FileUploadService();
+        final sharedWithUsers = shareType == 'author' ? [postOwnerPublicKey!, userPublicKey] : null;
+        for (final media in attachedMedia) {
           try {
-            AppLogger.log('CommentService: Processing media $i/${attachedMedia.length}: ${media['name']}, keys: ${media.keys.toList()}');
-            onProgress?.call('Uploading ${media['name'] ?? 'file'}...');
-            
-            // Prepare file bytes
-            late Uint8List fileBytes;
+            final Uint8List fileBytes;
             if (kIsWeb && media.containsKey('bytes')) {
-              final bytes = media['bytes'] as List<int>;
-              fileBytes = Uint8List.fromList(bytes);
-              AppLogger.log('CommentService: Read ${fileBytes.length} bytes from web bytes');
+              fileBytes = Uint8List.fromList(media['bytes'] as List<int>);
             } else if (!kIsWeb && media.containsKey('path')) {
-              final path = media['path'] as String;
-              fileBytes = await File(path).readAsBytes();
-              AppLogger.log('CommentService: Read ${fileBytes.length} bytes from path: $path');
+              fileBytes = await File(media['path'] as String).readAsBytes();
             } else {
-              AppLogger.log('CommentService: Cannot read file bytes for ${media['name']} - missing path/bytes. Keys: ${media.keys.toList()}');
+              AppLogger.log('CommentService: Cannot read file bytes for ${media['name']}');
               continue;
             }
-            
-            // Upload file
-            AppLogger.log('CommentService: Calling uploadEncryptedFile for ${media['name']}');
-            final uploadResult = await fileUploadService.uploadEncryptedFile(
+            onProgress?.call('Uploading ${media['name'] ?? 'file'}...');
+            final up = await uploader.uploadEncryptedFile(
               fileData: fileBytes,
               fileName: media['name'] ?? 'file.dat',
               publicKey: userPublicKey,
               mnemonic: userMnemonic,
               sharedWithUsers: sharedWithUsers,
-              selectedNode: {'endpoint': nodeEndpoint},
+              selectedNode: nodes.first,
+              replicaNodes: nodes.skip(1).toList(),
+              onlyTheseNodes: true,
               onProgress: onProgress,
               fileType: 'file',
               shareType: shareType == 'author' ? 'specific' : shareType,
-              parentFileId: postFileId, // 🆕 Set ParentFileId for comment media
-              contractId: contractId, // 🆕 Pass ContractId for blockchain integration
+              parentFileId: postFileId,
               confirmCharge: confirmMediaCharge == null
                   ? null
                   : (charge, monthly) =>
                       confirmMediaCharge(media['name']?.toString() ?? 'file', fileBytes.length, charge, monthly),
             );
-            
-            AppLogger.log('CommentService: Upload result for ${media['name']}: success=${uploadResult['success']}, fileId=${uploadResult['fileId']}, error=${uploadResult['error']}');
-            
-            if (uploadResult['success'] == true) {
-              // 🆕 DEBUG: Log metadata entries count to verify zero-knowledge sharing
-              AppLogger.log('CommentService: Media upload successful - fileId=${uploadResult['fileId']}, sharedWithUsers=${sharedWithUsers?.length ?? 0}');
-              if (sharedWithUsers != null && sharedWithUsers.isNotEmpty) {
-                AppLogger.log('CommentService: Media should have ${sharedWithUsers.length + 1} metadata entries (owner + ${sharedWithUsers.length} shared)');
-              }
-              
-              uploadedMedia.add({
-                'fileId': uploadResult['fileId'],
-                'type': media['type'] ?? 'image',
-                'name': media['name'] ?? 'file',
-                'order': uploadedMedia.length,
-                'nodeEndpoint': nodeEndpoint,
-                'size': uploadResult['fileSize'] ?? fileBytes.length,
-                'extension': media['extension'] ?? 'unknown',
-                'mimeType': media['mimeType'] ?? 'image/jpeg',
-                'encryptedKey': uploadResult['encryptedKey'],
-              });
-              AppLogger.log('CommentService: Successfully uploaded media file ${uploadResult['fileId']}');
-            } else {
-              AppLogger.log('CommentService: Failed to upload media: ${uploadResult['error']}');
+            if (up['success'] != true) {
+              AppLogger.log('CommentService: Failed to upload media: ${up['error']}');
+              continue;
             }
+            relatedFiles.add({
+              'fileId': up['fileId'],
+              'type': media['type'] ?? 'image',
+              'caption': media['name'] ?? '',
+              'order': relatedFiles.length,
+              'relationshipType': 'attachment',
+              'fileName': media['name'] ?? 'Unknown file',
+              'fileSize': up['fileSize'] ?? fileBytes.length,
+              'nodeEndpoint': up['nodeEndpoint'] ?? primaryEndpoint,
+              'encryptedKey': up['encryptedKey'] ?? '',
+            });
           } catch (e) {
             AppLogger.log('CommentService: Error uploading media: $e');
-            // Continue with other files
           }
         }
-        
-        AppLogger.log('CommentService: Uploaded ${uploadedMedia.length}/${attachedMedia.length} media files');
       }
 
+      // 2. The comment: one public entry with a plaintext block, or entries for the post's author and the commenter.
       final now = DateTime.now().toUtc().toIso8601String();
       final effectiveFileId = fileId ?? _generateId(prefix: 'comment');
-      final effectiveFirstBlockId = firstBlockId ?? _generateId(prefix: 'b0');
-
-      // 🆕 Build relatedFiles from uploaded media
-      List<Map<String, dynamic>>? relatedFiles;
-      if (uploadedMedia != null && uploadedMedia.isNotEmpty) {
-        relatedFiles = uploadedMedia.map((media) => {
-          'fileId': media['fileId'],
-          'type': media['type'] ?? 'image',
-          'caption': media['name'] ?? '',
-          'order': media['order'] ?? 0,
-          'relationshipType': 'attachment',
-          'fileName': media['name'] ?? 'Unknown file',
-          'fileSize': media['size'] ?? 0,
-          'nodeEndpoint': media['nodeEndpoint'] ?? nodeEndpoint,
-          'encryptedKey': media['encryptedKey'] ?? '',
-        }).toList();
-      }
-
-      // Public comment: public metadata + plaintext block0
+      final content = {
+        'commenterPublicKey': CryptoService.normalizePublicKey(userPublicKey),
+        'parentFileId': postFileId,
+        'text': commentText,
+        'createdAt': now,
+        if (relatedFiles.isNotEmpty) 'relatedFiles': relatedFiles,
+      };
+      final List<Map<String, dynamic>> metadataEntries;
+      final List<Map<String, dynamic>> blocks;
       if (shareType == 'public') {
-        final metadata = {
-          'fileId': effectiveFileId,
-          'firstBlockId': effectiveFirstBlockId,
-          'type': 'comment',
-          'parentFileId': postFileId,
-          'isPublic': true,
-          'shareType': 'public',
-          'encryptedType': 'public',
-          'recipientPubKey': '',
-          'version': '2.0',
-          'ownerPubKey': CryptoService.normalizePublicKey(userPublicKey),
-          if (contractId != null) 'contractId': contractId,
-        };
-        final block0 = {
-          'commenterPublicKey': CryptoService.normalizePublicKey(userPublicKey),
-          'parentFileId': postFileId,
-          'text': commentText,
-          'createdAt': now,
-          if (relatedFiles != null) 'relatedFiles': relatedFiles, // 🆕 Add relatedFiles
-        };
-        if (!await WalletService.chargeMatchesConfirmed(
-          sizeBytes: utf8.encode(json.encode(metadata)).length + utf8.encode(json.encode(block0)).length,
-          confirmed: confirmedCharge,
-          reconfirm: reconfirmCharge,
-        )) return false;
-
-        // Upload metadata and block0
-        final metaOk = await _uploadRaw(
-          nodeEndpoint: nodeEndpoint,
-          path: '/api/file/upload-metadata-raw',
-          content: Uint8List.fromList(utf8.encode(json.encode(metadata))),
-          fileName: '${effectiveFileId}_metadata.json',
-          contentType: 'application/json',
-          userPublicKey: userPublicKey,
-          userMnemonic: userMnemonic,
-        );
-        if (!metaOk) return false;
-
-        final blockOk = await _uploadRaw(
-          nodeEndpoint: nodeEndpoint,
-          path: '/api/file/upload-file-block-raw',
-          content: Uint8List.fromList(utf8.encode(json.encode(block0))),
-          fileName: effectiveFirstBlockId,
-          contentType: 'application/octet-stream',
-          userPublicKey: userPublicKey,
-          userMnemonic: userMnemonic,
-          extraHeaders: {
-            'X-Block-Id': effectiveFirstBlockId,
-            'X-File-Id': effectiveFileId,
-            'X-Block-Index': '0',
-            if (contractId != null) 'X-Contract-Id': contractId, // 🆕 Pass ContractId
-          },
-        );
-        // Store submits StorageOperation to blockchain via contract
-        if (blockOk) {
-          // Pay for it (Central bills social items like any item once the monthly social allowance is used). Off the UI path.
-          WalletService.registerStorageAt(
-            nodeEndpoint: nodeEndpoint,
-            fileId: effectiveFileId,
-            sizeBytes: utf8.encode(json.encode(metadata)).length + utf8.encode(json.encode(block0)).length,
-            social: true,
-            blocks: WalletService.blockHashes([
-              {'blockId': effectiveFirstBlockId, 'blockIndex': 0, 'encryptedContent': utf8.encode(json.encode(block0))},
-            ]),
-          ).ignore();
-        }
-        return blockOk;
-      }
-
-      // Encrypted comment: Chỉ chia sẻ với author của post
-      if (shareType == 'author') {
-        if (postOwnerPublicKey == null || postOwnerPublicKey.isEmpty) {
-          AppLogger.log('CommentService: Missing post owner key for author-only comment');
-          return false;
-        }
-
-        final contentBytes = Uint8List.fromList(utf8.encode(json.encode({
-          'commenterPublicKey': CryptoService.normalizePublicKey(userPublicKey),
-          'parentFileId': postFileId,
-          'text': commentText,
-          'createdAt': now,
-          if (relatedFiles != null) 'relatedFiles': relatedFiles, // 🆕 Add relatedFiles
-        })));
-
-        // Chia sẻ với author của post và chính người comment
+        final effectiveFirstBlockId = firstBlockId ?? _generateId(prefix: 'b0');
+        metadataEntries = [
+          {
+            'fileId': effectiveFileId,
+            'firstBlockId': effectiveFirstBlockId,
+            'type': 'comment',
+            'parentFileId': postFileId,
+            'isPublic': true,
+            'shareType': 'public',
+            'encryptedType': 'public',
+            'recipientPubKey': '',
+            'version': '2.0',
+            'ownerPubKey': CryptoService.normalizePublicKey(userPublicKey),
+          }
+        ];
+        blocks = [
+          {'blockId': effectiveFirstBlockId, 'blockIndex': 0, 'encryptedContent': Uint8List.fromList(utf8.encode(json.encode(content)))},
+        ];
+      } else {
         final result = await FileCryptoService.encryptAndSplitFile(
-          fileData: contentBytes,
+          fileData: Uint8List.fromList(utf8.encode(json.encode(content))),
           fileName: 'comment_${DateTime.now().millisecondsSinceEpoch}.json',
           ownerPublicKey: userPublicKey,
           mnemonic: userMnemonic,
-          sharedWithPublicKeys: [postOwnerPublicKey, userPublicKey],
+          sharedWithPublicKeys: [postOwnerPublicKey!, userPublicKey],
           fileType: 'comment',
-          relatedFiles: relatedFiles, // 🆕 Pass relatedFiles
+          relatedFiles: relatedFiles.isEmpty ? null : relatedFiles,
           onProgress: onProgress,
           encryptedType: 'encrypted',
           shareType: 'specific',
@@ -256,96 +163,48 @@ class CommentService {
           capsuleFor: null,
           policyScheme: null,
         );
-
-        final metadataEntries = List<Map<String, dynamic>>.from(result['metadataEntries'] as List);
-        final blocks = List<Map<String, dynamic>>.from(result['blocks'] as List);
-        for (final entry in metadataEntries) {
-          entry['type'] = 'comment';
-          entry['parentFileId'] = postFileId;
-          entry['ownerPubKey'] = CryptoService.normalizePublicKey(userPublicKey);
-          if (contractId != null) entry['contractId'] = contractId;
-        }
-        if (!await WalletService.chargeMatchesConfirmed(
-          sizeBytes: WalletService.storedBytes(metadataEntries, blocks),
-          confirmed: confirmedCharge,
-          reconfirm: reconfirmCharge,
-        )) return false;
-
-        // Upload all metadata entries
-        for (int i = 0; i < metadataEntries.length; i++) {
-          final entry = metadataEntries[i];
-          // add comment linkage fields (non-sensitive) for indexing
-          entry['type'] = 'comment';
-          entry['parentFileId'] = postFileId;
-          entry['ownerPubKey'] = CryptoService.normalizePublicKey(userPublicKey);
-          if (contractId != null) entry['contractId'] = contractId;
-
-          final ok = await _uploadRaw(
-            nodeEndpoint: nodeEndpoint,
-            path: '/api/file/upload-metadata-raw',
-            content: Uint8List.fromList(utf8.encode(json.encode(entry))),
-            fileName: '${entry['fileId']}_metadata_$i.json',
-            contentType: 'application/json',
-            userPublicKey: userPublicKey,
-            userMnemonic: userMnemonic,
-          );
-          if (!ok) return false;
-        }
-
-        // Upload blocks
-        for (final block in blocks) {
-          final blockId = block['blockId'] as String;
-          final blockIndex = block['blockIndex'] as int;
-          final encryptedContent = block['encryptedContent'] as Uint8List;
-
-          // find fileId to attribute block 0 to
-          String fileIdForBlock;
-          if (blockIndex == 0) {
-            final found = metadataEntries.firstWhere((e) => e['firstBlockId'] == blockId, orElse: () => metadataEntries.first);
-            fileIdForBlock = found['fileId'] as String;
-          } else {
-            // use owner's first entry for content blocks
-            fileIdForBlock = metadataEntries.first['fileId'] as String;
-          }
-
-          final ok = await _uploadRaw(
-            nodeEndpoint: nodeEndpoint,
-            path: '/api/file/upload-file-block-raw',
-            content: encryptedContent,
-            fileName: blockId,
-            contentType: 'application/octet-stream',
-            userPublicKey: userPublicKey,
-            userMnemonic: userMnemonic,
-            extraHeaders: {
-              'X-Block-Id': blockId,
-              'X-File-Id': fileIdForBlock,
-              'X-Block-Index': blockIndex.toString(),
-              if (contractId != null) 'X-Contract-Id': contractId, // 🆕 Pass ContractId
-            },
-          );
-          if (!ok) return false;
-        }
-
-        // Store submits StorageOperation to blockchain via contract
-        WalletService.registerStorageAt(
-          nodeEndpoint: nodeEndpoint,
-          fileId: metadataEntries.first['fileId'] as String,
-          sizeBytes: WalletService.storedBytes(metadataEntries, blocks),
-          social: true,
-          blocks: WalletService.blockHashes(blocks),
-        ).ignore();
-        return true;
+        metadataEntries = [
+          for (final e in result['metadataEntries'] as List)
+            {
+              ...Map<String, dynamic>.from(e as Map),
+              'type': 'comment',
+              'parentFileId': postFileId,
+              'ownerPubKey': CryptoService.normalizePublicKey(userPublicKey),
+            }
+        ];
+        blocks = [for (final b in result['blocks'] as List) Map<String, dynamic>.from(b as Map)];
       }
 
-      AppLogger.log('CommentService: Invalid shareType: $shareType');
-      return false;
+      // 3. Central's charge for the real size (re-confirmed if it differs from the one shown), then store it.
+      final quote = await WalletService.quoteChargeDetail(
+        sizeBytes: StorePlacement.billableBytes(metadataEntries, blocks),
+        storeNodes: 1,
+        replicas: AppConstants.replicationFactor,
+        social: true,
+      );
+      if (quote == null) return false;
+      if (confirmedCharge != null && quote.charge != confirmedCharge) {
+        if (reconfirmCharge == null || !await reconfirmCharge(quote.charge)) return false;
+      }
+      await StorePlacement.place(
+        escrowFileId: '${metadataEntries.first['fileId']}',
+        metadataEntries: metadataEntries,
+        blocks: blocks,
+        nodes: nodes,
+        publicKey: userPublicKey,
+        mnemonic: userMnemonic,
+        charge: quote.charge,
+        replicas: AppConstants.replicationFactor,
+        social: true,
+        onProgress: onProgress,
+      );
+      return true;
     } catch (e) {
       AppLogger.log('CommentService error: $e');
       return false;
     }
   }
 
-  /// Get comments for a post
   static Future<List<Map<String, dynamic>>?> getComments({
     required String postFileId,
     required String nodeEndpoint,
@@ -436,44 +295,6 @@ class CommentService {
     return '${prefix}_${ts}_$rand';
   }
 
-  static Future<bool> _uploadRaw({
-    required String nodeEndpoint,
-    required String path,
-    required Uint8List content,
-    required String fileName,
-    required String contentType,
-    required String userPublicKey,
-    required String userMnemonic,
-    Map<String, String>? extraHeaders,
-  }) async {
-    try {
-      final uri = Uri.parse('$nodeEndpoint$path');
-      final digest = await CryptoService.hashSHA256(content);
-      final bodyHash = base64.encode(digest);
-      final timestamp = (DateTime.now().millisecondsSinceEpoch / 1000).floor().toString();
-      final method = 'POST';
-      final pathForSigning = Uri.parse(path).path;
-      final dataToSign = '$method$pathForSigning$timestamp$bodyHash';
-      final signature = await CryptoService.sign(dataToSign, userMnemonic);
-      final headers = {
-        'Content-Type': contentType,
-        'X-User-PubKey': CryptoService.normalizePublicKey(userPublicKey),
-        'X-Timestamp': timestamp,
-        'X-Signature': signature,
-      };
-      if (extraHeaders != null) headers.addAll(extraHeaders);
-      final request = http.Request('POST', uri)
-        ..headers.addAll(headers)
-        ..bodyBytes = content;
-      final response = await http.Response.fromStream(await request.send());
-      if (response.statusCode == 200) return true;
-      AppLogger.log('CommentService: upload failed ${response.statusCode}: ${response.body}');
-      return false;
-    } catch (e) {
-      AppLogger.log('CommentService: _uploadRaw error: $e');
-      return false;
-    }
-  }
 
   /// Prepare a comment with storage cost confirmation.
   /// Returns fee info for UI to show confirmation dialog.
@@ -487,71 +308,28 @@ class CommentService {
     int durationDays = 365,
   }) async {
     try {
-      // Estimate size: metadata (~400 bytes) + block0 (~commentText.length + 200 bytes)
-      final estimatedSize = 600 + commentText.length;
-      final effectiveFileId = fileId ?? _generateId(prefix: 'comment');
-
-      final signer = RequestSigner(
-        publicKey: userPublicKey,
-        mnemonic: userMnemonic,
-      );
-
-      final now = DateTime.now();
-      final startDate = now.millisecondsSinceEpoch ~/ 1000;
-      final endDate = now.add(Duration(days: durationDays)).millisecondsSinceEpoch ~/ 1000;
-
       // What Central takes for this social item (0 within the monthly social allowance, if the network has one;
-      // otherwise small items are billed the minimum fee; sendReaction/sendComment re-check the real size). Recorded as the contract fee.
+      // otherwise small items are billed the minimum fee). sendComment re-checks the real size. No Store contract
+      // here: sendComment makes one with each Store that stores the comment.
+      final estimatedSize = 600 + commentText.length;
       final quote = await WalletService.quoteChargeDetail(
         sizeBytes: estimatedSize,
         storeNodes: 1,
         replicas: AppConstants.replicationFactor,
         social: true,
       );
-      final charge = quote?.charge;
-      final body = jsonEncode({
-        'contractType': 'TimeFixed',
-        'startDateUnix': startDate,
-        'endDateUnix': endDate,
-        'totalFileSize': estimatedSize,
-        'fileIds': [effectiveFileId],
-        if (charge != null) 'centralCharge': charge,
-      });
-
-      final signature = await signer.signRequest(
-        'POST',
-        '/api/storage/contracts/create',
-        Uint8List.fromList(utf8.encode(body)),
-      );
-      final normalizedPubKey = signer.getPublicKeyBase64();
-
-      final response = await http.post(
-        Uri.parse('$nodeEndpoint/api/storage/contracts/create'),
-        headers: {
-          'Content-Type': 'application/json',
-          'X-User-PubKey': normalizedPubKey,
-          'X-Timestamp': signature['timestamp']!,
-          'X-Signature': signature['signature']!,
-        },
-        body: body,
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final totalFee = (data['totalFee'] as num?)?.toDouble() ?? 0.0;
-        return {
-          'success': true,
-          'contractId': data['contractId'],
-          'fileId': effectiveFileId,
-          'totalFee': totalFee,
-          'feeBasis': data['feeBasis'] ?? 'Storage node calculated fee',
-          'estimatedSize': estimatedSize,
-          'monthlyFee': quote?.monthly ?? 0.0,
-          'durationDays': durationDays,
-          'estimatedCostPerDay': totalFee / (durationDays > 0 ? durationDays : 1),
-        };
-      }
-      return {'success': false, 'error': response.body};
+      if (quote == null) return {'success': false, 'error': 'Could not get the storage price from Central'};
+      return {
+        'success': true,
+        'contractId': null,
+        'fileId': fileId ?? _generateId(prefix: 'comment'),
+        'totalFee': quote.charge,
+        'feeBasis': 'Central storage charge',
+        'estimatedSize': estimatedSize,
+        'monthlyFee': quote.monthly,
+        'durationDays': durationDays,
+        'estimatedCostPerDay': quote.charge / (durationDays > 0 ? durationDays : 1),
+      };
     } catch (e) {
       AppLogger.log('CommentService: prepareCommentWithStorageCost error: $e');
       return {'success': false, 'error': e.toString()};

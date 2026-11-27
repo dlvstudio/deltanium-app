@@ -1,16 +1,14 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:uuid/uuid.dart';
-import 'package:crypto/crypto.dart';
 import 'package:deltanium_app/config/constants.dart';
 import 'package:deltanium_app/services/crypto_service.dart';
 import 'package:deltanium_app/services/file_crypto_service.dart';
 import 'package:deltanium_app/services/app_logger.dart';
 import 'package:deltanium_app/services/wallet_service.dart';
+import 'package:deltanium_app/services/store_placement.dart';
 import 'package:deltanium_app/utils/d_format.dart';
 
 // Removed pointycastle import - using WebCrypto for consistency
@@ -19,10 +17,99 @@ import 'package:deltanium_app/utils/d_format.dart';
 class FileUploadService {
   final String apiBaseUrl = AppConstants.apiBaseUrl;
   
-  /// Upload a file with encryption
-  /// 
-  /// The file will be encrypted and split into chunks before uploading
-  /// to the selected storage node
+  /// Encrypts [fileData] (or makes it a public file) into metadata entries (one per reader) and blocks, without
+  /// uploading anything: what [StorePlacement.place] stores. Returns fileId (the owner's entry), firstBlockId,
+  /// encryptedKey, recipientFileIds, metadataEntries, blocks and billableBytes.
+  Future<Map<String, dynamic>> encryptForUpload({
+    required Uint8List fileData,
+    required String fileName,
+    required String publicKey,
+    required String mnemonic,
+    List<String>? sharedWithUsers,
+    Function(String)? onProgress,
+    String? fileType,
+    String? shareType,
+    String? policyTag,
+    String? capsuleFor,
+    String? policyScheme,
+    String? parentFileId,
+  }) async {
+    final Map<String, dynamic> processedFile;
+    if (shareType == 'public') {
+      onProgress?.call('Creating public file...');
+      processedFile = await FileCryptoService.createPublicFile(
+        fileData: fileData,
+        fileName: fileName,
+        ownerPublicKey: publicKey,
+        sharedWithPublicKeys: sharedWithUsers,
+        onProgress: onProgress,
+        fileType: fileType,
+        encryptedType: 'public',
+        shareType: 'public',
+      );
+    } else {
+      onProgress?.call('Encrypting file...');
+      processedFile = await FileCryptoService.encryptAndSplitFile(
+        fileData: fileData,
+        fileName: fileName,
+        ownerPublicKey: publicKey,
+        mnemonic: mnemonic,
+        sharedWithPublicKeys: sharedWithUsers,
+        onProgress: onProgress,
+        fileType: fileType,
+        shareType: shareType,
+        policyTag: policyTag,
+        capsuleFor: capsuleFor,
+        policyScheme: policyScheme,
+      );
+    }
+    final metadataEntries = [
+      for (final e in processedFile['metadataEntries'] as List)
+        {
+          ...Map<String, dynamic>.from(e as Map),
+          if (parentFileId != null && parentFileId.isNotEmpty) 'parentFileId': parentFileId,
+        }
+    ];
+    final blocks = [for (final b in processedFile['blocks'] as List) Map<String, dynamic>.from(b as Map)];
+
+    // The owner's entry: its fileId is the file's id (and what Central bills); PRE entries may omit recipientPubKey.
+    final normalizedPk = CryptoService.convertToCompressedPublicKey(publicKey);
+    bool isOwner(Map<String, dynamic> e) {
+      if (e['recipientPubKey'] == normalizedPk) return true;
+      final ownerPk = (e['ownerPubKey'] ?? e['OwnerPubKey']) as String?;
+      return ownerPk != null &&
+          CryptoService.normalizePublicKey(ownerPk).toLowerCase() == CryptoService.normalizePublicKey(publicKey).toLowerCase();
+    }
+    final ownerEntry = metadataEntries.firstWhere(isOwner, orElse: () => metadataEntries.first);
+    // The owner's entry goes first: StorePlacement gives content blocks to the first entry.
+    metadataEntries
+      ..remove(ownerEntry)
+      ..insert(0, ownerEntry);
+    final fileId = ownerEntry['fileId'] as String?;
+    if (fileId == null || fileId.isEmpty) throw Exception('fileId is missing in ownerEntry');
+
+    final k = ownerEntry['encryptedKey'];
+    final encryptedKey = k is String ? k : (k is List ? base64Encode(Uint8List.fromList(k.cast<int>())) : '');
+    final recipientFileIds = <String, String>{
+      for (final e in metadataEntries)
+        if ('${e['recipientPubKey'] ?? ''}'.isNotEmpty && '${e['fileId'] ?? ''}'.isNotEmpty && e['recipientPubKey'] != normalizedPk)
+          '${e['recipientPubKey']}': '${e['fileId']}',
+    };
+    return {
+      'fileId': fileId,
+      'firstBlockId': ownerEntry['firstBlockId'] as String? ?? '',
+      'encryptedKey': encryptedKey,
+      'recipientFileIds': recipientFileIds,
+      'metadataEntries': metadataEntries,
+      'blocks': blocks,
+      'billableBytes': StorePlacement.billableBytes(metadataEntries, blocks),
+    };
+  }
+
+  /// Encrypts a file and stores it the way every item is stored ([StorePlacement.place]): a signed contract with
+  /// each Store, Central paid for all of them, then the file on each Store (each puts a StorageOperation on chain).
+  /// The Stores are [selectedNode] and [replicaNodes], filled up to the replication factor unless
+  /// [onlyTheseNodes] (attachments of a comment stay on the Stores of its post).
   Future<Map<String, dynamic>> uploadEncryptedFile({
     required Uint8List fileData,
     required String fileName,
@@ -30,322 +117,93 @@ class FileUploadService {
     required String mnemonic,
     List<String>? sharedWithUsers,
     required Map<String, dynamic> selectedNode,
-    /// Extra Store nodes for N-of-M (same ciphertext / same fileId).
     List<Map<String, dynamic>>? replicaNodes,
-    Function(String)? onProgress, // Progress callback
-    String? fileType, // 🆕 File type ('file', 'post', etc.)
-    String? shareType, // 🆕 Share type: 'public', 'shared', 'following'
-    // 🆕 PRE fields (optional)
+    bool onlyTheseNodes = false,
+    Function(String)? onProgress,
+    String? fileType,
+    String? shareType,
     String? policyTag,
     String? capsuleFor,
     String? policyScheme,
-    String? parentFileId, // 🆕 Parent file ID (for comment media, etc.)
-    String? contractId, // 🆕 Storage Contract ID for blockchain integration
-    int storageMonths = 1, // paid now; AutoRenew then bills monthly from the wallet
-    String storageContractType = 'AutoRenew', // or 'TimeFixed' (prepaid term, no renewal)
-    bool socialItem = false, // §10: reactions, comments, chat messages (free only within a social allowance, if any)
-    /// Asked with Central's exact charge (D) before anything is uploaded, when the charge is above 0;
-    /// return false to cancel. The charge shown is the charge registration takes.
+    String? parentFileId,
+    bool socialItem = false, // §10: reactions, comments, chat messages
+    /// Asked with Central's exact charge (D) before anything is paid or uploaded, when the charge is above 0;
+    /// return false to cancel.
     Future<bool> Function(double charge, double monthly)? confirmCharge,
-    /// Upload but do not register (pay) yet: the result carries `pendingRegistration` for
-    /// [registerPending], so a caller can confirm one total for several items first.
-    bool deferRegistration = false,
   }) async {
     try {
-      // Step 1: Initial setup
-      onProgress?.call('Setting up encryption...');
-      await Future.delayed(const Duration(milliseconds: 10)); // Yield control
-      
-      // Log raw file content for debugging if it's small enough
-      if (fileData.length < 100) {
-        String rawContent = String.fromCharCodes(fileData);
-        AppLogger.log('RAW FILE CONTENT: $rawContent');
-        AppLogger.log('This content must be encrypted before upload');
-      }
+      final enc = await encryptForUpload(
+        fileData: fileData,
+        fileName: fileName,
+        publicKey: publicKey,
+        mnemonic: mnemonic,
+        sharedWithUsers: sharedWithUsers,
+        onProgress: onProgress,
+        fileType: fileType,
+        shareType: shareType,
+        policyTag: policyTag,
+        capsuleFor: capsuleFor,
+        policyScheme: policyScheme,
+        parentFileId: parentFileId,
+      );
+      final fileId = enc['fileId'] as String;
+      final metadataEntries = enc['metadataEntries'] as List<Map<String, dynamic>>;
+      final blocks = enc['blocks'] as List<Map<String, dynamic>>;
+      final size = enc['billableBytes'] as int;
 
-      // Step 2: Encrypt and split the file (or create public file)
-      AppLogger.log('Starting file processing for file: $fileName, size: ${fileData.length} bytes, shareType: $shareType');
-      
-      // 🆕 FIX: For public files, use createPublicFile instead of encryptAndSplitFile
-      // This ensures public files are accessible by everyone, not just owner
-      final Map<String, dynamic> processedFile;
-      if (shareType == 'public') {
-        AppLogger.log('Using createPublicFile for public file (no encryption)');
-        onProgress?.call('Creating public file...');
-        await Future.delayed(const Duration(milliseconds: 10)); // Yield control
-        
-        processedFile = await FileCryptoService.createPublicFile(
-          fileData: fileData,
-          fileName: fileName,
-          ownerPublicKey: publicKey,
-          sharedWithPublicKeys: sharedWithUsers, // Can be null for truly public files
-          onProgress: onProgress,
-          fileType: fileType,
-          encryptedType: 'public',
-          shareType: 'public',
-        );
-      } else {
-        AppLogger.log('Using encryptAndSplitFile for encrypted file');
-        onProgress?.call('Encrypting file...');
-        await Future.delayed(const Duration(milliseconds: 10)); // Yield control
-        
-        // FOR NORMAL FILES: Use the FileCryptoService
-        processedFile = await FileCryptoService.encryptAndSplitFile(
-          fileData: fileData,
-          fileName: fileName,
-          ownerPublicKey: publicKey,
-          mnemonic: mnemonic,
-          sharedWithPublicKeys: sharedWithUsers,
-          onProgress: onProgress, // Pass progress callback
-          fileType: fileType, // 🆕 Pass file type to crypto service
-          shareType: shareType, // 🆕 Pass share type
-          policyTag: policyTag,
-          capsuleFor: capsuleFor,
-          policyScheme: policyScheme,
-        );
-      }
-      
-      // 🆕 ZERO-KNOWLEDGE SHARING: Handle multiple metadata entries
-      final metadataEntries = processedFile['metadataEntries'] as List<dynamic>;
-      final blocks = processedFile['blocks'] as List<dynamic>;
-      
-      // Lấy fileId của owner làm fileId chính
-      Map<String, dynamic> ownerEntry;
-      final normalizedPk = CryptoService.convertToCompressedPublicKey(publicKey);
-      try {
-        ownerEntry = metadataEntries.firstWhere((e) => e['recipientPubKey'] == normalizedPk);
-      } catch (_) {
-        // PRE path: recipientPubKey may be omitted; fall back to ownerPubKey match or first entry
-        try {
-          ownerEntry = metadataEntries.firstWhere((e) {
-            final ownerPk = (e['ownerPubKey'] ?? e['OwnerPubKey']) as String?;
-            if (ownerPk == null) return false;
-            final normOwnerPk = CryptoService.normalizePublicKey(ownerPk);
-            final normInput = CryptoService.normalizePublicKey(publicKey);
-            return normOwnerPk.toLowerCase() == normInput.toLowerCase();
-          });
-        } catch (_) {
-          ownerEntry = metadataEntries.first as Map<String, dynamic>;
+      String ep(Map<String, dynamic> n) => '${n['httpsEndpoint'] ?? n['endpoint'] ?? n['Endpoint'] ?? ''}';
+      final nodes = await StorePlacement.pickNodes(
+        mustUse: [ep(selectedNode), ...?replicaNodes?.map(ep)],
+        onlyThese: onlyTheseNodes,
+      );
+
+      // TOKENOMICS_V2 §6/§10: Central's exact charge for this size on these Stores; stop if unaffordable or declined.
+      final q = await WalletService.quoteChargeDetail(
+        sizeBytes: size,
+        storeNodes: nodes.length,
+        replicas: nodes.length,
+        social: socialItem,
+      );
+      if (q == null) throw Exception('Could not get the storage price from Central. Try again.');
+      if (q.charge > 0) {
+        final balance = await WalletService.getBalance() ?? 0;
+        if (balance < q.charge) {
+          throw Exception('Storage costs ${DFormat.exact(q.charge)} but your balance is '
+              '${DFormat.exact(balance)}. Top up your wallet first.');
         }
-      }
-      final String? fileIdValue = ownerEntry['fileId'] as String?;
-      if (fileIdValue == null || fileIdValue.isEmpty) {
-        throw Exception('fileId is missing in ownerEntry');
-      }
-      final String fileId = fileIdValue;
-      // Handle encryptedKey: could be String (Base64) or List<int> (bytes)
-      String encryptedKey = '';
-      final encryptedKeyValue = ownerEntry['encryptedKey'];
-      if (encryptedKeyValue != null) {
-        if (encryptedKeyValue is String) {
-          encryptedKey = encryptedKeyValue;
-        } else if (encryptedKeyValue is List) {
-          // Convert bytes to Base64
-          encryptedKey = base64Encode(Uint8List.fromList(encryptedKeyValue.cast<int>()));
-        } else if (encryptedKeyValue is Uint8List) {
-          encryptedKey = base64Encode(encryptedKeyValue);
-        }
-      }
-      AppLogger.log('🔍 DEBUG: Owner entry: $ownerEntry');
-      AppLogger.log('🔍 DEBUG: Using fileId for content blocks: $fileId');
-      AppLogger.log('🔍 DEBUG: Owner encryptedKey type: ${encryptedKeyValue.runtimeType}, length: ${encryptedKey.length}');
-      final String? fileHash = null; // Không còn merkleRoot public
-
-      // N-of-M target nodes (primary + replicas), deduped by id
-      final List<Map<String, dynamic>> targetNodes = [selectedNode];
-      if (replicaNodes != null) {
-        for (final n in replicaNodes) {
-          final id = n['id']?.toString() ?? n['Id']?.toString() ?? '';
-          final already = targetNodes.any((t) => (t['id']?.toString() ?? t['Id']?.toString() ?? '') == id);
-          if (id.isNotEmpty && !already) targetNodes.add(n);
-        }
-      }
-      final factor = AppConstants.replicationFactor;
-      while (targetNodes.length > factor && targetNodes.length > 1) {
-        targetNodes.removeLast();
+        if (confirmCharge != null && !await confirmCharge(q.charge, q.monthly)) throw StorageChargeDeclined();
       }
 
-      // TOKENOMICS_V2 §6/§10: the exact charge registration will take (same size, Stores and kind); stop early
-      // if it is unaffordable or the user declines it.
-      if (!deferRegistration) {
-        final q = await WalletService.quoteChargeDetail(
-          sizeBytes: fileData.length,
-          storeNodes: targetNodes.length,
-          social: socialItem,
-          months: storageMonths,
-        );
-        final charge = q?.charge;
-        if (charge != null && charge > 0) {
-          final balance = await WalletService.getBalance() ?? 0;
-          if (balance < charge) {
-            throw Exception('Storage costs ${DFormat.exact(charge)} but your balance is '
-                '${DFormat.exact(balance)}. Top up your wallet first.');
-          }
-          if (confirmCharge != null && !await confirmCharge(charge, q!.monthly)) {
-            throw StorageChargeDeclined();
-          }
-        }
-      }
-
-      // Block hashes let Central run proof-of-storage challenges against each Store.
-      final blockHashes = blocks.map((b) {
-        final m = b as Map<String, dynamic>;
-        return <String, Object>{
-          'blockId': m['blockId'] as String,
-          'sha256': sha256.convert(m['encryptedContent'] as Uint8List).toString(),
-          'blockIndex': (m['blockIndex'] as num?)?.toInt() ?? -1,
-        };
-      }).toList();
-
-      var blockchainSubmitted = true;
-      final List<String> blockchainSubmitErrors = [];
-      final List<String> placedNodeIds = [];
-
-      for (var ni = 0; ni < targetNodes.length; ni++) {
-        final node = targetNodes[ni];
-        final String? nodeEndpointValue = (node['endpoint'] ?? node['Endpoint']) as String?;
-        if (nodeEndpointValue == null || nodeEndpointValue.isEmpty) {
-          throw Exception('nodeEndpoint is missing in selectedNode');
-        }
-        final String nodeEndpoint = nodeEndpointValue;
-        onProgress?.call('Uploading to store ${ni + 1}/${targetNodes.length}...');
-
-        for (int i = 0; i < metadataEntries.length; i++) {
-          final metadataEntry = Map<String, dynamic>.from(metadataEntries[i] as Map);
-          if (parentFileId != null && parentFileId.isNotEmpty) {
-            metadataEntry['parentFileId'] = parentFileId;
-          }
-          if (contractId != null && contractId.isNotEmpty) {
-            metadataEntry['contractId'] = contractId;
-          }
-          final metadataJson = json.encode(metadataEntry);
-          final metadataResult = await _uploadContent(
-            nodeEndpoint: nodeEndpoint,
-            path: '/api/file/upload-metadata-raw',
-            content: Uint8List.fromList(utf8.encode(metadataJson)),
-            fileName: '${metadataEntry['firstBlockId']}_metadata.json',
-            contentType: 'application/json',
-            publicKey: publicKey,
-            mnemonic: mnemonic,
-          );
-          if (metadataResult['success'] != true) {
-            throw Exception('Failed to upload metadata entry ${i + 1} to node ${ni + 1}: ${metadataResult['error']}');
-          }
-          final response = metadataResult['response'];
-          if (response is Map && response['BlockchainSubmitted'] == false) {
-            blockchainSubmitted = false;
-            final error = response['BlockchainSubmitError'];
-            if (error is String && error.isNotEmpty) blockchainSubmitErrors.add(error);
-          }
-        }
-
-        for (int i = 0; i < blocks.length; i++) {
-          final block = blocks[i] as Map<String, dynamic>;
-          final blockId = block['blockId'] as String;
-          final blockIndex = block['blockIndex'] as int;
-          final encryptedContent = block['encryptedContent'] as Uint8List;
-          final isMetadataBlock = block['isMetadataBlock'] == true;
-          String fileIdForBlock;
-          if (isMetadataBlock) {
-            final correspondingMetadata = metadataEntries.firstWhere(
-              (entry) => entry['firstBlockId'] == blockId,
-              orElse: () => throw Exception('No metadata found for block $blockId'),
-            );
-            fileIdForBlock = correspondingMetadata['fileId'] as String;
-          } else {
-            fileIdForBlock = fileId;
-          }
-          final blockResult = await _uploadContent(
-            nodeEndpoint: nodeEndpoint,
-            path: '/api/file/upload-file-block-raw',
-            content: encryptedContent,
-            fileName: blockId,
-            contentType: 'application/octet-stream',
-            publicKey: publicKey,
-            mnemonic: mnemonic,
-            extraHeaders: {
-              'X-Block-Id': blockId,
-              'X-File-Id': fileIdForBlock,
-              'X-Block-Index': blockIndex.toString(),
-              if (contractId != null) 'X-Contract-Id': contractId,
-            },
-          );
-          if (blockResult['success'] != true) {
-            throw Exception('Failed to upload file block $blockIndex to node ${ni + 1}: ${blockResult['error']}');
-          }
-        }
-
-        final String? nodeId = (node['id'] ?? node['Id'])?.toString();
-        if (nodeId != null && nodeId.isNotEmpty) placedNodeIds.add(nodeId);
-      }
-
-      onProgress?.call('Finalizing...');
-      Map<String, dynamic>? storage;
-      Map<String, dynamic>? pendingRegistration;
-      if (placedNodeIds.isNotEmpty && deferRegistration) {
-        pendingRegistration = {
-          'fileId': fileId,
-          'publicKey': publicKey,
-          'storeNodeIds': placedNodeIds,
-          'fileSize': fileData.length,
-          'fileHash': fileHash ?? '',
-          'months': storageMonths,
-          'contractType': storageContractType,
-          'blocks': blockHashes,
-          'social': socialItem,
-        };
-      } else if (placedNodeIds.isNotEmpty) {
-        final reg = await _registerReplicasWithAPI(
-          fileId: fileId,
-          publicKey: publicKey,
-          mnemonic: mnemonic,
-          storeNodeIds: placedNodeIds,
-          fileSize: fileData.length,
-          fileHash: fileHash ?? '',
-          months: storageMonths,
-          contractType: storageContractType,
-          blocks: blockHashes,
-          social: socialItem,
-        );
-        if (reg['status'] == 402) {
-          throw Exception('Storage fee not paid: ${reg['error']}');
-        }
-        storage = reg['storage'] as Map<String, dynamic>?;
-      }
-      
+      final placed = await StorePlacement.place(
+        escrowFileId: fileId,
+        metadataEntries: metadataEntries,
+        blocks: blocks,
+        nodes: nodes,
+        publicKey: publicKey,
+        mnemonic: mnemonic,
+        charge: q.charge,
+        replicas: nodes.length,
+        social: socialItem,
+        onProgress: onProgress,
+      );
       onProgress?.call('Upload completed!');
-      
-      // Get firstBlockId from ownerEntry
-      final firstBlockId = ownerEntry['firstBlockId'] as String? ?? '';
-      
-      // Build map of recipientPubKey -> fileId for all shared users
-      final Map<String, String> recipientFileIds = {};
-      for (final entry in metadataEntries) {
-        final recipientKey = entry['recipientPubKey'] as String? ?? '';
-        final entryFileId = entry['fileId'] as String? ?? '';
-        if (recipientKey.isNotEmpty && entryFileId.isNotEmpty && recipientKey != normalizedPk) {
-          recipientFileIds[recipientKey] = entryFileId;
-        }
-      }
-      
-      // Return success with file information
       return {
         'success': true,
         'fileId': fileId,
-        'firstBlockId': firstBlockId, // 🆕 Include firstBlockId for decryption
-        'recipientFileIds': recipientFileIds, // 🆕 Map of recipient -> their fileId
+        'firstBlockId': enc['firstBlockId'],
+        'recipientFileIds': enc['recipientFileIds'],
         'fileName': fileName,
         'fileSize': fileData.length,
-        'url': '${(selectedNode['endpoint'] ?? selectedNode['Endpoint'])}/api/file/download/$fileId',
+        'url': '${placed.primaryEndpoint}/api/file/download/$fileId',
+        'nodeEndpoint': placed.primaryEndpoint,
+        'nodeId': placed.nodeIds.first,
         'blockCount': blocks.length,
         'sharedWith': sharedWithUsers ?? [],
-        'encryptedKey': encryptedKey,
-        'storeNodeIds': placedNodeIds,
-        'replicationFactor': placedNodeIds.length,
-        'blockchainSubmitted': blockchainSubmitted,
-        'blockchainSubmitErrors': blockchainSubmitErrors,
-        'storage': storage,
-        if (pendingRegistration != null) 'pendingRegistration': pendingRegistration,
+        'encryptedKey': enc['encryptedKey'],
+        'storeNodeIds': placed.nodeIds,
+        'replicationFactor': placed.nodes.length,
+        'blockchainSubmitted': !placed.chainSubmitPending,
+        'blockchainSubmitErrors': const <String>[],
       };
     } catch (e) {
       AppLogger.log('Error in encrypted file upload: $e');
@@ -354,6 +212,7 @@ class FileUploadService {
         'success': false,
         'error': e.toString(),
         if (e is StorageChargeDeclined) 'cancelled': true,
+        if (e is StoragePaymentRefused) 'status': 402,
       };
     }
   }
@@ -483,163 +342,6 @@ class FileUploadService {
         'success': false,
         'error': e.toString(),
       };
-    }
-  }
-  
-  /// Upload content to a node
-  Future<Map<String, dynamic>> _uploadContent({
-    required String nodeEndpoint,
-    required String path,
-    required Uint8List content,
-    required String fileName,
-    required String contentType,
-    required String publicKey,
-    required String mnemonic,
-    Map<String, String>? extraHeaders,
-  }) async {
-    try {
-      final uri = Uri.parse('$nodeEndpoint$path');
-      AppLogger.log('Creating request to $uri');
-
-      // Calculate content hash for signing
-      final digest = await CryptoService.hashSHA256(content);
-      final bodyHash = base64Encode(digest);
-
-      // Generate signature components
-      final timestamp = (DateTime.now().millisecondsSinceEpoch / 1000).floor().toString();
-      final method = 'POST';
-      final pathForSigning = Uri.parse(path).path;
-      final buffer = StringBuffer();
-      buffer.write(method);
-      buffer.write(pathForSigning);
-      buffer.write(timestamp);
-      buffer.write(bodyHash);
-      final dataToSign = buffer.toString();
-
-      // Generate a key pair from mnemonic
-      final keyPair = CryptoService.generateKeyPairFromMnemonic(mnemonic);
-      final signature = await CryptoService.sign(dataToSign, kIsWeb ? mnemonic : keyPair);
-
-      // Set up headers
-      final headers = {
-        'Content-Type': contentType,
-        'X-User-PubKey': CryptoService.normalizePublicKey(publicKey),
-        'X-Timestamp': timestamp,
-        'X-Signature': signature,
-      };
-      
-      // Add any extra headers if provided
-      if (extraHeaders != null) {
-        headers.addAll(extraHeaders);
-      }
-
-      final request = http.Request('POST', uri)
-        ..headers.addAll(headers)
-        ..bodyBytes = content;
-
-      final response = await request.send();
-      final resp = await http.Response.fromStream(response);
-
-      if (resp.statusCode == 200) {
-        return {
-          'success': true,
-          'response': json.decode(resp.body),
-        };
-      } else {
-        return {
-          'success': false,
-          'error': 'HTTP ${resp.statusCode}: ${resp.body}',
-        };
-      }
-    } catch (e) {
-      AppLogger.log('Exception in _uploadContent: ${e}');
-      return {
-        'success': false,
-        'error': e.toString(),
-      };
-    }
-  }
-  
-  /// Register N-of-M placements with Central (signed).
-  /// Pays for an upload made with `deferRegistration: true` (its `pendingRegistration`). Returns
-  /// `{ok, status, error?, storage?}`; status 402 means the wallet could not pay.
-  Future<Map<String, dynamic>> registerPending(Map<String, dynamic> pending, {required String mnemonic}) =>
-      _registerReplicasWithAPI(
-        fileId: pending['fileId'] as String,
-        publicKey: pending['publicKey'] as String,
-        mnemonic: mnemonic,
-        storeNodeIds: (pending['storeNodeIds'] as List).cast<String>(),
-        fileSize: pending['fileSize'] as int,
-        fileHash: pending['fileHash'] as String? ?? '',
-        months: pending['months'] as int? ?? 1,
-        contractType: pending['contractType'] as String? ?? 'AutoRenew',
-        blocks: (pending['blocks'] as List).cast<Map<String, Object>>(),
-        social: pending['social'] as bool? ?? false,
-      );
-
-  Future<Map<String, dynamic>> _registerReplicasWithAPI({
-    required String fileId,
-    required String publicKey,
-    required String mnemonic,
-    required List<String> storeNodeIds,
-    required int fileSize,
-    required String fileHash,
-    int months = 1,
-    String contractType = 'AutoRenew',
-    List<Map<String, Object>> blocks = const [],
-    bool social = false,
-  }) async {
-    try {
-      final bodyMap = {
-        'fileId': fileId,
-        'ownerPublicKey': publicKey,
-        'storeNodeIds': storeNodeIds,
-        'fileSize': fileSize,
-        'fileHash': fileHash,
-        'months': months,
-        'contractType': contractType,
-        'blocks': blocks,
-        if (social) 'kind': 'social',
-      };
-      final body = json.encode(bodyMap);
-      final path = '/api/storedfile/register-replicas';
-      // apiBaseUrl already includes /api — strip for path used in signature
-      final pathForSigning = path;
-      final timestamp = DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000;
-      final bodyHash = sha256.convert(utf8.encode(body)).bytes
-          .map((b) => b.toRadixString(16).padLeft(2, '0'))
-          .join();
-      final dataToSign = 'POST$pathForSigning$timestamp$bodyHash';
-      final signature = await CryptoService.sign(dataToSign, mnemonic);
-      final compressedPk = CryptoService.convertToCompressedPublicKey(publicKey);
-
-      AppLogger.log('Registering replicas with API: $fileId nodes=$storeNodeIds');
-      final response = await http.post(
-        Uri.parse('$apiBaseUrl/storedfile/register-replicas'),
-        headers: {
-          'Content-Type': 'application/json',
-          'X-User-PubKey': compressedPk,
-          'X-Timestamp': timestamp.toString(),
-          'X-Signature': signature,
-        },
-        body: body,
-      );
-
-      if (response.statusCode != 200) {
-        AppLogger.log('Warning: Failed to register replicas: ${response.statusCode} ${response.body}');
-        String error = response.body;
-        try {
-          final decoded = json.decode(response.body);
-          if (decoded is Map && decoded['error'] != null) error = decoded['error'].toString();
-        } catch (_) {}
-        return {'ok': false, 'status': response.statusCode, 'error': error};
-      }
-      AppLogger.log('Replicas registered: ${response.body}');
-      final decoded = json.decode(response.body) as Map<String, dynamic>;
-      return {'ok': true, 'status': 200, 'storage': decoded['storage']};
-    } catch (e) {
-      AppLogger.log('Warning: Error registering replicas: $e');
-      return {'ok': false, 'status': 0, 'error': e.toString()};
     }
   }
   

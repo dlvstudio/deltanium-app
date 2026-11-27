@@ -10,9 +10,6 @@ import 'package:deltanium_app/services/auth_service.dart';
 import 'package:deltanium_app/services/app_logger.dart';
 import 'package:deltanium_app/features/file_manager/file_upload_service.dart';
 
-import 'package:deltanium_app/services/storage_contract_service.dart';
-import 'package:deltanium_app/models/storage_contract.dart';
-import 'package:deltanium_app/services/request_signer.dart';
 import 'package:deltanium_app/services/store_node_directory.dart';
 
 /// Chat service – handles offline (file-based) messaging
@@ -20,17 +17,8 @@ import 'package:deltanium_app/services/store_node_directory.dart';
 class ChatService {
   static final String _apiBase = AppConstants.apiBaseUrl;
 
-  // Cache of active contractId per conversation to avoid frequent popups
-  // Key: conversationId, Value: last used contractId
-  static final Map<String, String> _conversationContracts = {};
-
   /// Per-message charge (D) the user confirmed for a conversation in this session; asked again when it changes.
   static final Map<String, double> _confirmedMessageCharge = {};
-  
-  // Default bundle size (5MB) for chat messages
-  static const int _chatBundleSize = 5 * 1024 * 1024;
-  // Threshold for auto-approval (0.1 DLT)
-  static const double _autoApprovalThreshold = 0.1;
 
   // ========== AUTH HELPERS ==========
 
@@ -175,111 +163,9 @@ class ChatService {
       final targets = selectedNodes.take(n).toList();
       final selectedNode = targets.first;
       final replicaNodes = targets.length > 1 ? targets.sublist(1) : <Map<String, dynamic>>[];
-      final nodeEndpoint = selectedNode['endpoint'] as String;
       AppLogger.log('ChatService: Using ${targets.length} store node(s) for offline message');
 
-      // 3. Negotiate/Reuse Storage Contract (Chat Bundle)
-      String? contractId = _conversationContracts[conversationId];
-      
-      // If we don't have a cached contract, try to find an active one on the store
-      final signer = RequestSigner(
-        publicKey: pubKey,
-        mnemonic: mnemonic,
-      );
-      final contractService = StorageContractService(
-        storeBaseUrl: nodeEndpoint,
-        signer: signer,
-      );
-
-      if (contractId == null) {
-        AppLogger.log('ChatService: No cached contract for $conversationId, checking store...');
-        final activeContracts = await contractService.listActiveContracts(userPublicKey: pubKey);
-        
-        // Find a valid contract with enough space (simplified)
-        final validContract = activeContracts.where((c) => 
-          c.isValidNow() && 
-          (c.fileIds.isEmpty || c.fileIds.contains('any')) && // Store supports empty fileIds for bundles
-          c.totalFileSize >= _chatBundleSize // Just a heuristic
-        ).firstOrNull;
-
-        if (validContract != null) {
-          contractId = validContract.contractId;
-          _conversationContracts[conversationId] = contractId;
-          AppLogger.log('ChatService: Reusing existing contract $contractId');
-        }
-      }
-
-      // If still no contract, create a new "Chat Bundle"
-      if (contractId == null) {
-        AppLogger.log('ChatService: Negotiating new Chat Bundle contract');
-        final proposal = await contractService.createContract(
-          contractType: 'OpenEnded',
-          startDate: DateTime.now().millisecondsSinceEpoch ~/ 1000,
-          totalFileSize: _chatBundleSize,
-          fileIds: [], // Empty means covers any file
-          appPublicKey: pubKey,
-          storageNodePublicKey: selectedNode['publicKey']?.toString() ?? selectedNode['PublicKey']?.toString() ?? '',
-          // Central bills each message on its own (social items: free), never the bundle.
-          centralCharge: 0,
-        );
-
-        if (proposal == null) {
-          AppLogger.log('ChatService: Failed to create contract proposal');
-          return false;
-        }
-
-        // Auto-approve if fee is low, else trigger confirmation popup
-        if (proposal.totalFee <= _autoApprovalThreshold) {
-          AppLogger.log('ChatService: Auto-approving low fee: ${proposal.totalFee}');
-          final signed = await contractService.approveAndSignContract(
-            contract: proposal,
-            appPrivateKey: mnemonic,
-          );
-          if (signed != null) {
-            contractId = signed.contractId;
-            _conversationContracts[conversationId] = contractId;
-          }
-        } else {
-          // Trigger user confirmation popup
-          AppLogger.log('ChatService: Fee requires manual approval: ${proposal.totalFee}');
-          
-          bool confirmed = false;
-          if (onConfirmFee != null) {
-            final storageInfo = {
-              'totalFee': proposal.totalFee,
-              'durationDays': 365, // ChatBundle is OpenEnded but we show 1 year cost
-              'estimatedCostPerDay': proposal.totalFee / 365,
-              'estimatedSize': _chatBundleSize,
-              'feeBasis': 'Node quote for 1 year of a 5 MB chat bundle, asked once per conversation',
-            };
-            confirmed = await onConfirmFee(storageInfo);
-          } else {
-            AppLogger.log('ChatService: No onConfirmFee callback provided.');
-            confirmed = false;
-          }
-
-          if (confirmed) {
-            AppLogger.log('ChatService: User confirmed storage cost. Signing contract...');
-            final signed = await contractService.approveAndSignContract(
-              contract: proposal,
-              appPrivateKey: mnemonic,
-            );
-            if (signed != null) {
-              contractId = signed.contractId;
-              _conversationContracts[conversationId] = contractId;
-            }
-          } else {
-            AppLogger.log('ChatService: Storage cost not confirmed by user.');
-            return false;
-          }
-        }
-      }
-
-      if (contractId == null) {
-        AppLogger.log('ChatService: Could not obtain a valid contractId');
-        return false;
-      }
-
+      // 3. Stored like every item: a contract with each Store, Central paid, then the message on each Store.
       // 4. Encrypt and upload using FileUploadService (N-of-M replicas)
       final uploader = FileUploadService();
       final result = await uploader.uploadEncryptedFile(
@@ -292,7 +178,6 @@ class ChatService {
         replicaNodes: replicaNodes,
         fileType: 'chat_message',
         shareType: 'me',
-        contractId: contractId,
         socialItem: true,
         onProgress: (msg) => AppLogger.log('ChatService upload: $msg'),
         confirmCharge: (charge, monthly) async {
